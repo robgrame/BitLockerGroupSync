@@ -1,0 +1,26 @@
+# Azure / Bicep
+*.azuredeploy.json
+.bicep/
+bicepconfig.json.bak
+
+# PowerShell
+*.ps1xml.bak
+PSScriptAnalyzerSettings.psd1.bak
+
+# Secrets / local settings (mai committare!)
+*.secret
+*.secrets.json
+local.settings.json
+.env
+.env.*
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.user
+
+# Log e output
+*.log
+output/

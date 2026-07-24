@@ -66,6 +66,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
+$VerbosePreference = 'Continue'
 
 $script:GraphBase = 'https://graph.microsoft.com/v1.0'
 $script:ReconcileErrors = 0
@@ -78,10 +79,10 @@ function Write-Log {
         [ValidateSet('INFO', 'WARN', 'ERROR', 'OK')][string]$Level = 'INFO'
     )
     $ts = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
-    Write-Output ("[{0}] [{1}] {2}" -f $ts, $Level, $Message)
+    Write-Verbose ("[{0}] [{1}] {2}" -f $ts, $Level, $Message)
 }
 
-function Connect-Graph {
+function Connect-GraphSession {
     param([string]$ClientId)
 
     if (-not (Get-Module -ListAvailable -Name Microsoft.Graph.Authentication)) {
@@ -103,7 +104,7 @@ function Connect-Graph {
 }
 
 # Invoca Graph gestendo paging e throttling (429) con rispetto di Retry-After.
-function Invoke-GraphRequest {
+function Invoke-GraphApi {
     param(
         [Parameter(Mandatory)][string]$Uri,
         [ValidateSet('GET', 'POST', 'PATCH', 'DELETE')][string]$Method = 'GET',
@@ -184,7 +185,7 @@ function Invoke-GraphBatch {
                 $entry
             }
             $body = @{ requests = @($batchRequests) }
-            $resp = Invoke-GraphRequest -Uri 'https://graph.microsoft.com/v1.0/$batch' -Method POST -Body $body
+            $resp = Invoke-GraphApi -Uri 'https://graph.microsoft.com/v1.0/$batch' -Method POST -Body $body
 
             $retry = @{}
             foreach ($res in $resp.Value[0].responses) {
@@ -212,7 +213,7 @@ function Get-OrCreateGroup {
     param([Parameter(Mandatory)][string]$DisplayName, [string]$Description)
 
     $filter = "displayName eq '$($DisplayName.Replace("'","''"))'"
-    $existing = (Invoke-GraphRequest -Uri "groups?`$filter=$filter&`$select=id,displayName" -All).Value
+    $existing = (Invoke-GraphApi -Uri "groups?`$filter=$filter&`$select=id,displayName" -All).Value
     if ($existing.Count -gt 0) {
         Write-Log "Gruppo gia' presente: $DisplayName ($($existing[0].id))"
         return $existing[0].id
@@ -233,7 +234,7 @@ function Get-OrCreateGroup {
         mailNickname    = $nickname
         securityEnabled = $true
     }
-    $group = (Invoke-GraphRequest -Uri 'groups' -Method POST -Body $body).Value[0]
+    $group = (Invoke-GraphApi -Uri 'groups' -Method POST -Body $body).Value[0]
     Write-Log "Creato gruppo '$DisplayName' ($($group.id))." 'OK'
     $script:NewGroupCreated = $true
     return $group.id
@@ -252,9 +253,9 @@ function Sync-GroupMembership {
         return
     }
 
-    $current = (Invoke-GraphRequest -Uri "groups/$GroupId/members/microsoft.graph.device?`$select=id" -All).Value | ForEach-Object { $_.id }
+    $current = @((Invoke-GraphApi -Uri "groups/$GroupId/members/microsoft.graph.device?`$select=id" -All).Value | ForEach-Object { $_.id })
     $currentSet = [System.Collections.Generic.HashSet[string]]::new([string[]]$current, [System.StringComparer]::OrdinalIgnoreCase)
-    $desiredSet = [System.Collections.Generic.HashSet[string]]::new([string[]]$DesiredObjectIds, [System.StringComparer]::OrdinalIgnoreCase)
+    $desiredSet = [System.Collections.Generic.HashSet[string]]::new([string[]]@($DesiredObjectIds), [System.StringComparer]::OrdinalIgnoreCase)
 
     $toAdd = @($DesiredObjectIds | Where-Object { -not $currentSet.Contains($_) } | Select-Object -Unique)
     $toRemove = @($current | Where-Object { -not $desiredSet.Contains($_) } | Select-Object -Unique)
@@ -276,7 +277,7 @@ function Sync-GroupMembership {
         $done = $false
         for ($attempt = 1; $attempt -le 4 -and -not $done; $attempt++) {
             try {
-                Invoke-GraphRequest -Uri "groups/$GroupId" -Method PATCH -Body $body | Out-Null
+                Invoke-GraphApi -Uri "groups/$GroupId" -Method PATCH -Body $body | Out-Null
                 $done = $true
             }
             catch {
@@ -319,7 +320,7 @@ function Get-ManagedDeviceState {
     $staleStates = @('retirePending', 'retireIssued', 'retireFailed', 'wipePending', 'wipeIssued', 'wipeFailed', 'deletePending')
 
     Write-Log 'Recupero tutti i managed device (full sync)...'
-    $resp = Invoke-GraphRequest -Uri "deviceManagement/managedDevices?`$filter=$OsFilter&`$select=$select" -All
+    $resp = Invoke-GraphApi -Uri "deviceManagement/managedDevices?`$filter=$OsFilter&`$select=$select" -All
 
     $map = @{}
     foreach ($d in $resp.Value) {
@@ -341,7 +342,7 @@ try {
     Write-Log '=== Nimbus.BitLockerGroupSync - avvio ==='
     if ($WhatIfOnly) { Write-Log 'Modalita WhatIf attiva: nessuna modifica verra applicata.' 'WARN' }
 
-    Connect-Graph -ClientId $UserAssignedClientId
+    Connect-GraphSession -ClientId $UserAssignedClientId
 
     # 1) Gruppi target
     $script:NewGroupCreated = $false
@@ -364,14 +365,14 @@ try {
 
     # 3) Recovery key BitLocker -> set di deviceId con almeno una chiave
     Write-Log 'Recupero BitLocker recovery key da Entra...'
-    $keys = (Invoke-GraphRequest -Uri "informationProtection/bitlocker/recoveryKeys?`$select=id,deviceId" -All).Value
+    $keys = (Invoke-GraphApi -Uri "informationProtection/bitlocker/recoveryKeys?`$select=id,deviceId" -All).Value
     $devicesWithKey = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
     foreach ($k in $keys) { if ($k.deviceId) { [void]$devicesWithKey.Add([string]$k.deviceId) } }
     Write-Log "Trovate $($keys.Count) recovery key su $($devicesWithKey.Count) device distinti."
 
     # 4) Mappa deviceId (Entra) -> objectId del device Entra
     Write-Log 'Costruzione mappa device Entra (deviceId -> objectId)...'
-    $entraDevices = (Invoke-GraphRequest -Uri "devices?`$select=id,deviceId" -All).Value
+    $entraDevices = (Invoke-GraphApi -Uri "devices?`$select=id,deviceId" -All).Value
     $deviceIdToObjectId = @{}
     foreach ($d in $entraDevices) { if ($d.deviceId) { $deviceIdToObjectId[[string]$d.deviceId] = [string]$d.id } }
     Write-Log "Mappati $($deviceIdToObjectId.Count) device Entra."

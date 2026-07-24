@@ -31,7 +31,13 @@ param(
         'Device.ReadWrite.All',
         'Group.Create',
         'GroupMember.ReadWrite.All'
-    )
+    ),
+
+    [Parameter()]
+    [switch]$UseDeviceCode,
+
+    [Parameter()]
+    [string]$TenantId
 )
 
 $ErrorActionPreference = 'Stop'
@@ -41,7 +47,10 @@ Import-Module Microsoft.Graph.Authentication -ErrorAction Stop
 Import-Module Microsoft.Graph.Applications -ErrorAction Stop
 
 Write-Host 'Connessione a Microsoft Graph (serve consenso admin)...' -ForegroundColor Cyan
-Connect-MgGraph -Scopes 'Application.ReadWrite.All', 'AppRoleAssignment.ReadWrite.All' -NoWelcome
+$connectParams = @{ Scopes = 'Application.ReadWrite.All', 'AppRoleAssignment.ReadWrite.All'; NoWelcome = $true }
+if ($UseDeviceCode) { $connectParams['UseDeviceCode'] = $true }
+if ($TenantId)      { $connectParams['TenantId'] = $TenantId }
+Connect-MgGraph @connectParams
 
 # Service principal di Microsoft Graph nel tenant.
 $graphSp = Get-MgServicePrincipal -Filter "appId eq '$GraphAppId'"

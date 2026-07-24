@@ -4,7 +4,7 @@ using './main.bicep'
 //  Parametri di deploy - personalizza questi valori.
 // ---------------------------------------------------------------------------
 
-param location = 'westeurope'
+param location = 'italynorth'
 param automationAccountName = 'aa-bitlocker-groupsync'
 param runbookName = 'Sync-BitLockerComplianceGroups'
 

@@ -12,6 +12,7 @@
 [![Microsoft Entra ID](https://img.shields.io/badge/Microsoft_Entra_ID-Identity-0067B8?style=for-the-badge&logo=microsoftentraid&logoColor=white)](https://learn.microsoft.com/entra/)
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg?style=flat-square)](LICENSE)
+[![CI](https://img.shields.io/github/actions/workflow/status/robgrame/Nimbus.BitLockerGroupSync/ci.yml?branch=main&style=flat-square&logo=githubactions&logoColor=white&label=CI)](https://github.com/robgrame/Nimbus.BitLockerGroupSync/actions)
 [![Managed Identity](https://img.shields.io/badge/Auth-Managed_Identity-brightgreen?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/entra/identity/managed-identities-azure-resources/)
 [![Zero Secrets](https://img.shields.io/badge/Secrets-Zero-success?style=flat-square&logo=keepassxc)](#-security)
 [![IaC Ready](https://img.shields.io/badge/Deploy-One_Command-blueviolet?style=flat-square)](#-deployment)
@@ -89,8 +90,12 @@ Assegnati alla managed identity dallo script [`Grant-GraphPermissions.ps1`](scri
 |---|---|
 | `DeviceManagementManagedDevices.Read.All` | Leggere i managed device Intune |
 | `BitlockerKey.Read.All` | Elencare le BitLocker recovery key |
-| `Device.Read.All` | Risolvere `deviceId → objectId` degli oggetti device Entra |
-| `Group.ReadWrite.All` | Creare i gruppi e gestirne i membri |
+| `Device.ReadWrite.All` | Risolvere `deviceId → objectId` **e** aggiungere i device come membri dei gruppi |
+| `Group.Create` | Creare i gruppi di sicurezza gestiti |
+| `GroupMember.ReadWrite.All` | Leggere/aggiornare la membership dei gruppi |
+
+> 🔒 **Least privilege**: nessun `Group.ReadWrite.All`. Solo creazione gruppi + gestione membership.
+> `Device.ReadWrite.All` è **richiesto da Graph** per aggiungere oggetti *device* a un gruppo (app-only).
 
 > [!IMPORTANT]
 > Gli **app role di Graph non sono RBAC di Azure** e non si assegnano via Bicep/ARM.
@@ -151,13 +156,75 @@ pwsh ./scripts/Grant-GraphPermissions.ps1 -ManagedIdentityPrincipalId <principal
 | `TargetOperatingSystem` | `Windows` | OS dei device valutati |
 | `WhatIfOnly` | `$false` | Simulazione senza modifiche |
 | `UserAssignedClientId` | *(vuoto)* | Client id di una UAMI (opz.) |
+| `KeyMissingAlertThreshold` | `0` | Soglia device cifrati senza key oltre cui inviare alert (0 = off) |
+| `AlertWebhookUrl` | *(vuoto)* | Webhook per l'alert soglia (fallback: variable `BitLockerSyncAlertWebhook`) |
+| `NotifyWebhookUrl` | *(vuoto)* | Webhook di notifica a ogni run (fallback: variable `BitLockerSyncNotifyWebhook`) |
+
+---
+
+## 🔔 Webhook & notifiche
+
+La soluzione supporta **tre** meccanismi (tutti opzionali):
+
+| Tipo | Direzione | Scopo |
+|---|---|---|
+| 📣 **Notify webhook** | outbound | A **ogni run** invia il riepilogo JSON (`sync.completed`) ai subscriber (Teams/Logic App/SIEM) |
+| 🚨 **Alert webhook** | outbound | Invia un alert solo quando `KeyMissing ≥ KeyMissingAlertThreshold` |
+| ▶️ **Trigger webhook** | inbound | URL HTTP `POST` per **avviare** una sync on-demand |
+
+Gli URL outbound si passano come parametro **oppure** come Automation variable cifrata
+(`BitLockerSyncNotifyWebhook` / `BitLockerSyncAlertWebhook`), create automaticamente dal Bicep
+se valorizzi `notifyWebhookUrl` / `alertWebhookUrl`.
+
+Il **trigger webhook** si crea con:
+
+```powershell
+.\deploy.ps1 -ResourceGroupName rg-bitlocker -CreateTriggerWebhook
+# L'URI viene mostrato UNA SOLA VOLTA: salvalo subito.
+```
+
+Esempio payload di notifica:
+
+```json
+{
+  "solution": "Nimbus.BitLockerGroupSync",
+  "event": "sync.completed",
+  "encrypted": 812, "notEncrypted": 14,
+  "keyEscrowed": 799, "keyMissing": 13,
+  "timestamp": "2026-07-24T17:05:00.000Z"
+}
+```
+
+---
+
+## ⚡ Ottimizzazioni per grandi tenant
+
+- 🧮 **Scritture in `$batch`**: add via `PATCH members@odata.bind` (chunk da 20), remove via JSON `$batch` con **retry dei subrequest falliti**.
+- 🧹 **Filtro stale/retired**: esclude device in `retirePending/retireIssued/wipePending/wipeIssued/...` prima della valutazione.
+- 🔁 **Retry sulla replica**: ritenta il `400 Bad Request` dei gruppi appena creati e attende la propagazione.
+- ⏱️ **Throttling-aware**: retry con backoff esponenziale e rispetto di `Retry-After`.
+- 🧾 **Esito verificabile**: se una riconciliazione lascia errori, il job **fallisce** e la notifica riporta `sync.completed_with_errors`.
+
+> ℹ️ La *delta query* è stata valutata ma **non adottata**: Intune non espone un endpoint delta
+> supportato per `managedDevices` e il modello di riconciliazione richiede comunque lo stato completo
+> a ogni run. Il full sync con `$select` + `$batch` è la scelta corretta e più robusta.
+
+---
+
+## 🤖 CI/CD & assegnazione permessi
+
+- ✅ **GitHub Actions** (`.github/workflows/ci.yml`): `bicep build` + **PSScriptAnalyzer** + **Pester**.
+- 🔐 **Assegnazione permessi automatica** (opt-in): `assignGraphPermissions=true` +
+  `permissionGrantIdentityId`/`permissionGrantIdentityClientId` usa un `deploymentScript` per assegnare
+  gli app role Graph (richiede una UAMI con `AppRoleAssignment.ReadWrite.All`). In alternativa, lo
+  script manuale [`Grant-GraphPermissions.ps1`](scripts/Grant-GraphPermissions.ps1).
 
 ---
 
 ## 🛡️ Security
 
 - ✅ **Zero segreti**: solo managed identity, nessuna app registration con client secret.
-- ✅ **Least privilege**: permessi di sola lettura tranne `Group.ReadWrite.All`.
+- ✅ **Least privilege**: nessun `Group.ReadWrite.All`; solo `Group.Create` + `GroupMember.ReadWrite.All` + i read scoperti.
 - ✅ **Idempotente**: calcola il diff e applica solo le differenze.
 - ✅ **Auditabile**: log verbosi + Log Analytics opzionale.
 
@@ -168,6 +235,8 @@ pwsh ./scripts/Grant-GraphPermissions.ps1 -ManagedIdentityPrincipalId <principal
 | Sintomo | Causa probabile | Rimedio |
 |---|---|---|
 | `Insufficient privileges` | Permessi Graph non propagati | Attendere qualche minuto / rilanciare lo script permessi |
+| `403` su add device | Manca `Device.ReadWrite.All` | Assegnare l'app role e attendere la propagazione |
+| `400` add su gruppo nuovo | Replica del gruppo in corso | Gestito automaticamente con retry; riprovare al run successivo |
 | `Modulo Microsoft.Graph.Authentication non disponibile` | Modulo non importato | Verificare la risorsa `powerShell72Modules` |
 | Device non aggiunti | `azureADDeviceId` assente o device non in Entra | Verificare Entra join / registrazione |
 | Molti in `NonRisolti` | Mismatch deviceId ↔ objectId | Verificare sync Intune/Entra |
@@ -176,11 +245,10 @@ pwsh ./scripts/Grant-GraphPermissions.ps1 -ManagedIdentityPrincipalId <principal
 
 ## 💡 Advisory & miglioramenti futuri
 
-- 🔁 `$batch` di Graph e **delta query** per tenant di grandi dimensioni.
-- 🧮 Batch membership (fino a 20 `members@odata.bind` per PATCH) per ridurre le chiamate.
-- 🧹 Gestione device *stale/retired* con rimozione automatica.
-- 📈 Alerting su crescita del gruppo `KeyMissing` (rischio compliance).
-- 🧪 Test Pester + validazione `az bicep build` in CI (GitHub Actions).
+- 📊 Emissione di metriche custom su Log Analytics + alert nativi su crescita di `KeyMissing`.
+- 🗃️ Persistenza dello storico esiti (Storage Table) per trend e reportistica.
+- 🔗 Trigger event-driven da Intune/Entra tramite Logic App verso il webhook di trigger.
+- 🧪 Ampliamento della suite Pester con mock delle chiamate Graph.
 
 ---
 
@@ -190,7 +258,11 @@ pwsh ./scripts/Grant-GraphPermissions.ps1 -ManagedIdentityPrincipalId <principal
 Nimbus.BitLockerGroupSync/
 ├── runbook/   Sync-BitLockerComplianceGroups.ps1   # 📜 Logica del runbook
 ├── bicep/     main.bicep + main.bicepparam         # 🧱 Infrastructure as Code
-├── scripts/   Grant-GraphPermissions.ps1           # 🔐 Assegnazione app role Graph
+│              graphPermissions.bicep               # 🔐 Modulo deploymentScript (opt-in)
+├── scripts/   Grant-GraphPermissions.ps1           # 🔐 Assegnazione app role Graph (manuale)
+├── tests/     Solution.Tests.ps1                   # 🧪 Test Pester
+├── .github/workflows/ci.yml                        # 🤖 CI (bicep + PSSA + Pester)
+├── PSScriptAnalyzerSettings.psd1                   # 🔎 Regole linter
 ├── deploy.ps1                                       # 🚀 Orchestratore end-to-end
 └── docs/                                            # 📚 Documentazione aggiuntiva
 ```

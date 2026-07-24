@@ -17,7 +17,8 @@ param(
     [Parameter(Mandatory)][string]$ResourceGroupName,
     [Parameter()][string]$Location = 'westeurope',
     [Parameter()][string]$ParameterFile = "$PSScriptRoot\bicep\main.bicepparam",
-    [Parameter()][switch]$StartJobNow
+    [Parameter()][switch]$StartJobNow,
+    [Parameter()][switch]$CreateTriggerWebhook
 )
 
 $ErrorActionPreference = 'Stop'
@@ -44,6 +45,21 @@ Write-Host "    Managed identity principalId: $principalId" -ForegroundColor Gre
 
 Write-Host '==> Assegnazione permessi Graph alla managed identity...' -ForegroundColor Cyan
 & "$PSScriptRoot\scripts\Grant-GraphPermissions.ps1" -ManagedIdentityPrincipalId $principalId
+
+if ($CreateTriggerWebhook) {
+    Write-Host '==> Creazione webhook di trigger inbound...' -ForegroundColor Cyan
+    $expiry = (Get-Date).AddYears(1)
+    $wh = New-AzAutomationWebhook `
+        -ResourceGroupName $ResourceGroupName `
+        -AutomationAccountName $aaName `
+        -Name "$rbName-trigger" `
+        -RunbookName $rbName `
+        -IsEnabled $true `
+        -ExpiryTime $expiry `
+        -Force
+    Write-Host '    [!] Copia SUBITO questo URI: non sara piu recuperabile!' -ForegroundColor Yellow
+    Write-Host "    Webhook URI: $($wh.WebhookURI)" -ForegroundColor Green
+}
 
 if ($StartJobNow) {
     Write-Host '==> Avvio job del runbook...' -ForegroundColor Cyan

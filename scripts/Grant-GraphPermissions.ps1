@@ -28,8 +28,9 @@ param(
     [string[]]$GraphAppRoles = @(
         'DeviceManagementManagedDevices.Read.All',
         'BitlockerKey.Read.All',
-        'Device.Read.All',
-        'Group.ReadWrite.All'
+        'Device.ReadWrite.All',
+        'Group.Create',
+        'GroupMember.ReadWrite.All'
     )
 )
 

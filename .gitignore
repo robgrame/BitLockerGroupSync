@@ -2,6 +2,8 @@
 *.azuredeploy.json
 .bicep/
 bicepconfig.json.bak
+# Bicep ARM output compilato (artefatto di build)
+bicep/*.json
 
 # PowerShell
 *.ps1xml.bak

@@ -35,6 +35,27 @@ param scheduleStartTime string = dateTimeAdd(utcNow(), 'PT15M')
 @description('Se true crea un workspace Log Analytics e collega la diagnostica.')
 param deployLogAnalytics bool = true
 
+@description('Soglia di device cifrati senza recovery key oltre la quale inviare alert. 0 = disabilitato.')
+@minValue(0)
+param keyMissingAlertThreshold int = 0
+
+@description('URL webhook per gli alert soglia (Teams/Logic App). Se valorizzato viene salvato come Automation variable cifrata.')
+@secure()
+param alertWebhookUrl string = ''
+
+@description('URL webhook di NOTIFICA a ogni run. Se valorizzato viene salvato come Automation variable cifrata.')
+@secure()
+param notifyWebhookUrl string = ''
+
+@description('Se true assegna automaticamente i permessi Graph alla MI tramite deploymentScript (richiede una UAMI gia abilitata).')
+param assignGraphPermissions bool = false
+
+@description('Resource id della user-assigned managed identity (con AppRoleAssignment.ReadWrite.All) usata dal deploymentScript.')
+param permissionGrantIdentityId string = ''
+
+@description('Client id della UAMI usata dal deploymentScript.')
+param permissionGrantIdentityClientId string = ''
+
 @description('Tag applicati a tutte le risorse.')
 param tags object = {
   solution: 'Nimbus.BitLockerGroupSync'
@@ -110,12 +131,32 @@ resource jobSchedule 'Microsoft.Automation/automationAccounts/jobSchedules@2023-
     parameters: {
       GroupPrefix: groupPrefix
       TargetOperatingSystem: targetOperatingSystem
+      KeyMissingAlertThreshold: string(keyMissingAlertThreshold)
     }
   }
   dependsOn: [
     runbook
     schedule
   ]
+}
+
+// Automation variables (cifrate) per i webhook.
+resource alertWebhookVar 'Microsoft.Automation/automationAccounts/variables@2023-11-01' = if (!empty(alertWebhookUrl)) {
+  parent: automationAccount
+  name: 'BitLockerSyncAlertWebhook'
+  properties: {
+    isEncrypted: true
+    value: '"${alertWebhookUrl}"'
+  }
+}
+
+resource notifyWebhookVar 'Microsoft.Automation/automationAccounts/variables@2023-11-01' = if (!empty(notifyWebhookUrl)) {
+  parent: automationAccount
+  name: 'BitLockerSyncNotifyWebhook'
+  properties: {
+    isEncrypted: true
+    value: '"${notifyWebhookUrl}"'
+  }
 }
 
 resource logAnalytics 'Microsoft.OperationalInsights/workspaces@2023-09-01' = if (deployLogAnalytics) {
@@ -145,6 +186,18 @@ resource diagnostics 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' 
         enabled: true
       }
     ]
+  }
+}
+
+// Assegnazione automatica (opt-in) dei permessi Graph alla MI tramite deploymentScript.
+module graphPermissions 'graphPermissions.bicep' = if (assignGraphPermissions) {
+  name: 'assign-graph-permissions'
+  params: {
+    location: location
+    managedIdentityPrincipalId: automationAccount.identity.principalId
+    grantIdentityResourceId: permissionGrantIdentityId
+    grantIdentityClientId: permissionGrantIdentityClientId
+    tags: tags
   }
 }
 

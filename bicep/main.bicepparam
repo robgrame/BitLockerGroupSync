@@ -20,9 +20,9 @@ param keyEscrowedGroupName = ''
 param keyMissingGroupName = ''
 
 // Gruppi opzionali (il gruppo Encrypted e' sempre attivo). Default: disabilitati.
-param enableNotEncryptedGroup = false
-param enableKeyEscrowedGroup = false
-param enableKeyMissingGroup = false
+param enableNotEncryptedGroup = true
+param enableKeyEscrowedGroup = true
+param enableKeyMissingGroup = true
 
 param targetOperatingSystem = 'Windows'
 param scheduleIntervalHours = 6

@@ -12,8 +12,15 @@
       1. isEncrypted        -> disco cifrato (BitLocker attivo).
       2. recovery key        -> esiste almeno una BitLocker recovery key salvata su Entra.
 
-    In base a queste condizioni popola (in modo idempotente) quattro gruppi di sicurezza:
-      <Prefix>-Encrypted, <Prefix>-NotEncrypted, <Prefix>-KeyEscrowed, <Prefix>-KeyMissing.
+    In base a queste condizioni popola (in modo idempotente) fino a quattro gruppi di sicurezza:
+      - <Encrypted>     (PRINCIPALE, sempre attivo): device con disco cifrato (isEncrypted=true).
+      - <NotEncrypted>  (opzionale): device con disco NON cifrato.
+      - <KeyEscrowed>   (opzionale): device con recovery key salvata in Entra.
+      - <KeyMissing>    (opzionale): device cifrati SENZA recovery key (rischio compliance).
+
+    I gruppi opzionali si abilitano con EnableNotEncryptedGroup / EnableKeyEscrowedGroup /
+    EnableKeyMissingGroup. Il nome di ciascun gruppo e' personalizzabile tramite i parametri
+    *GroupName; se non specificato viene derivato da GroupPrefix.
 
     Ottimizzazioni:
       - Scritture di membership in $batch (chunk da 20) per ridurre le chiamate.
@@ -35,9 +42,38 @@
 
 [CmdletBinding(SupportsShouldProcess = $true)]
 param(
-    # Prefisso usato per il naming dei gruppi di sicurezza gestiti dal runbook.
+    # Prefisso usato per il naming dei gruppi quando non ne viene specificato il nome esplicito.
     [Parameter()]
     [string]$GroupPrefix = 'SG-Intune-BitLocker',
+
+    # --- Nomi dei gruppi (personalizzabili). Se lasciati vuoti vengono derivati da GroupPrefix. ---
+    # Gruppo PRINCIPALE: device con disco cifrato (isEncrypted=true). Sempre creato/gestito.
+    [Parameter()]
+    [string]$EncryptedGroupName = '',
+
+    # Gruppo OPZIONALE: device con disco NON cifrato (isEncrypted=false).
+    [Parameter()]
+    [string]$NotEncryptedGroupName = '',
+
+    # Gruppo OPZIONALE: device con BitLocker recovery key salvata in Entra.
+    [Parameter()]
+    [string]$KeyEscrowedGroupName = '',
+
+    # Gruppo OPZIONALE: device cifrati SENZA recovery key salvata in Entra (rischio compliance).
+    [Parameter()]
+    [string]$KeyMissingGroupName = '',
+
+    # --- Abilitazione dei gruppi opzionali (il gruppo Encrypted e' sempre attivo). ---
+    # Valori accettati: 'true'/'false' (case-insensitive). Stringa per compatibilita' con le
+    # jobSchedule di Azure Automation, che passano i parametri come stringhe.
+    [Parameter()]
+    [string]$EnableNotEncryptedGroup = 'false',
+
+    [Parameter()]
+    [string]$EnableKeyEscrowedGroup = 'false',
+
+    [Parameter()]
+    [string]$EnableKeyMissingGroup = 'false',
 
     # Sistema operativo dei device da valutare (filtro su managedDevice.operatingSystem).
     [Parameter()]
@@ -80,6 +116,14 @@ function Write-Log {
     )
     $ts = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
     Write-Verbose ("[{0}] [{1}] {2}" -f $ts, $Level, $Message)
+}
+
+# Converte in bool i valori passati come stringa (robusto ai parametri stringa delle jobSchedule:
+# [bool]'false' in PowerShell varrebbe erroneamente $true).
+function ConvertTo-Bool {
+    param([object]$Value)
+    if ($Value -is [bool]) { return $Value }
+    return ("$Value").Trim().ToLower() -in @('true', '1', 'yes', 'y', 'on')
 }
 
 function Connect-GraphSession {
@@ -344,13 +388,38 @@ try {
 
     Connect-GraphSession -ClientId $UserAssignedClientId
 
-    # 1) Gruppi target
+    # Nomi effettivi dei gruppi: se non specificati, derivati da GroupPrefix.
+    if ([string]::IsNullOrWhiteSpace($EncryptedGroupName))    { $EncryptedGroupName    = "$GroupPrefix-Encrypted" }
+    if ([string]::IsNullOrWhiteSpace($NotEncryptedGroupName)) { $NotEncryptedGroupName = "$GroupPrefix-NotEncrypted" }
+    if ([string]::IsNullOrWhiteSpace($KeyEscrowedGroupName))  { $KeyEscrowedGroupName  = "$GroupPrefix-KeyEscrowed" }
+    if ([string]::IsNullOrWhiteSpace($KeyMissingGroupName))   { $KeyMissingGroupName   = "$GroupPrefix-KeyMissing" }
+
+    # Abilitazione gruppi opzionali (conversione robusta da stringa).
+    $useNotEncrypted = ConvertTo-Bool $EnableNotEncryptedGroup
+    $useKeyEscrowed  = ConvertTo-Bool $EnableKeyEscrowedGroup
+    $useKeyMissing   = ConvertTo-Bool $EnableKeyMissingGroup
+
+    # Le recovery key servono solo se serve valutare KeyEscrowed/KeyMissing (gruppi o alert soglia).
+    $needKeys = $useKeyEscrowed -or $useKeyMissing -or ($KeyMissingAlertThreshold -gt 0)
+
+    Write-Log ("Gruppi attivi: Encrypted (principale)" + `
+        $($useNotEncrypted ? ', NotEncrypted' : '') + `
+        $($useKeyEscrowed  ? ', KeyEscrowed'  : '') + `
+        $($useKeyMissing   ? ', KeyMissing'   : ''))
+
+    # 1) Gruppi target (Encrypted sempre; gli altri solo se abilitati).
     $script:NewGroupCreated = $false
     $groupIds = @{
-        Encrypted    = Get-OrCreateGroup -DisplayName "$GroupPrefix-Encrypted"    -Description 'Device Intune con disco cifrato (isEncrypted=true).'
-        NotEncrypted = Get-OrCreateGroup -DisplayName "$GroupPrefix-NotEncrypted" -Description 'Device Intune con disco NON cifrato (isEncrypted=false).'
-        KeyEscrowed  = Get-OrCreateGroup -DisplayName "$GroupPrefix-KeyEscrowed"  -Description 'Device con BitLocker recovery key salvata in Entra.'
-        KeyMissing   = Get-OrCreateGroup -DisplayName "$GroupPrefix-KeyMissing"   -Description 'Device cifrati SENZA recovery key salvata in Entra.'
+        Encrypted = Get-OrCreateGroup -DisplayName $EncryptedGroupName -Description 'Device Intune con disco cifrato (isEncrypted=true).'
+    }
+    if ($useNotEncrypted) {
+        $groupIds.NotEncrypted = Get-OrCreateGroup -DisplayName $NotEncryptedGroupName -Description 'Device Intune con disco NON cifrato (isEncrypted=false).'
+    }
+    if ($useKeyEscrowed) {
+        $groupIds.KeyEscrowed = Get-OrCreateGroup -DisplayName $KeyEscrowedGroupName -Description 'Device con BitLocker recovery key salvata in Entra.'
+    }
+    if ($useKeyMissing) {
+        $groupIds.KeyMissing = Get-OrCreateGroup -DisplayName $KeyMissingGroupName -Description 'Device cifrati SENZA recovery key salvata in Entra.'
     }
     # I gruppi appena creati possono avere ritardi di replica: attendo prima di gestirne la membership.
     if ($script:NewGroupCreated -and -not $WhatIfOnly) {
@@ -363,12 +432,17 @@ try {
     $deviceMap = Get-ManagedDeviceState -OsFilter $osFilter
     Write-Log "Device validi (post-filtro stale): $($deviceMap.Count)."
 
-    # 3) Recovery key BitLocker -> set di deviceId con almeno una chiave
-    Write-Log 'Recupero BitLocker recovery key da Entra...'
-    $keys = (Invoke-GraphApi -Uri "informationProtection/bitlocker/recoveryKeys?`$select=id,deviceId" -All).Value
+    # 3) Recovery key BitLocker -> set di deviceId con almeno una chiave (solo se necessario)
     $devicesWithKey = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
-    foreach ($k in $keys) { if ($k.deviceId) { [void]$devicesWithKey.Add([string]$k.deviceId) } }
-    Write-Log "Trovate $($keys.Count) recovery key su $($devicesWithKey.Count) device distinti."
+    if ($needKeys) {
+        Write-Log 'Recupero BitLocker recovery key da Entra...'
+        $keys = (Invoke-GraphApi -Uri "informationProtection/bitlocker/recoveryKeys?`$select=id,deviceId" -All).Value
+        foreach ($k in $keys) { if ($k.deviceId) { [void]$devicesWithKey.Add([string]$k.deviceId) } }
+        Write-Log "Trovate $($keys.Count) recovery key su $($devicesWithKey.Count) device distinti."
+    }
+    else {
+        Write-Log 'Nessun gruppo/alert basato su recovery key: salto il recupero delle chiavi.'
+    }
 
     # 4) Mappa deviceId (Entra) -> objectId del device Entra
     Write-Log 'Costruzione mappa device Entra (deviceId -> objectId)...'
@@ -394,17 +468,23 @@ try {
     }
     if ($unresolved -gt 0) { Write-Log "$unresolved device Intune senza corrispondente oggetto Entra (ignorati)." 'WARN' }
 
-    # 6) Riconciliazione membership
-    Sync-GroupMembership -GroupId $groupIds.Encrypted    -GroupName "$GroupPrefix-Encrypted"    -DesiredObjectIds $desired.Encrypted.ToArray()
-    Sync-GroupMembership -GroupId $groupIds.NotEncrypted -GroupName "$GroupPrefix-NotEncrypted" -DesiredObjectIds $desired.NotEncrypted.ToArray()
-    Sync-GroupMembership -GroupId $groupIds.KeyEscrowed  -GroupName "$GroupPrefix-KeyEscrowed"  -DesiredObjectIds $desired.KeyEscrowed.ToArray()
-    Sync-GroupMembership -GroupId $groupIds.KeyMissing   -GroupName "$GroupPrefix-KeyMissing"   -DesiredObjectIds $desired.KeyMissing.ToArray()
+    # 6) Riconciliazione membership (solo gruppi abilitati)
+    Sync-GroupMembership -GroupId $groupIds.Encrypted -GroupName $EncryptedGroupName -DesiredObjectIds $desired.Encrypted.ToArray()
+    if ($useNotEncrypted) {
+        Sync-GroupMembership -GroupId $groupIds.NotEncrypted -GroupName $NotEncryptedGroupName -DesiredObjectIds $desired.NotEncrypted.ToArray()
+    }
+    if ($useKeyEscrowed) {
+        Sync-GroupMembership -GroupId $groupIds.KeyEscrowed -GroupName $KeyEscrowedGroupName -DesiredObjectIds $desired.KeyEscrowed.ToArray()
+    }
+    if ($useKeyMissing) {
+        Sync-GroupMembership -GroupId $groupIds.KeyMissing -GroupName $KeyMissingGroupName -DesiredObjectIds $desired.KeyMissing.ToArray()
+    }
 
     $summary['DeviceValutati'] = $deviceMap.Count
     $summary['Encrypted'] = $desired.Encrypted.Count
-    $summary['NotEncrypted'] = $desired.NotEncrypted.Count
-    $summary['KeyEscrowed'] = $desired.KeyEscrowed.Count
-    $summary['KeyMissing (rischio)'] = $desired.KeyMissing.Count
+    if ($useNotEncrypted) { $summary['NotEncrypted'] = $desired.NotEncrypted.Count }
+    if ($useKeyEscrowed)  { $summary['KeyEscrowed'] = $desired.KeyEscrowed.Count }
+    if ($needKeys)        { $summary['KeyMissing (rischio)'] = $desired.KeyMissing.Count }
     $summary['NonRisolti'] = $unresolved
     $summary['ErroriRiconciliazione'] = $script:ReconcileErrors
 

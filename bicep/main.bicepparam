@@ -12,6 +12,18 @@ param runbookName = 'Sync-BitLockerComplianceGroups'
 param runbookContentUri = 'https://raw.githubusercontent.com/robgrame/Nimbus.BitLockerGroupSync/main/runbook/Sync-BitLockerComplianceGroups.ps1'
 
 param groupPrefix = 'SG-Intune-BitLocker'
+
+// Nomi gruppi: lasciare vuoti per derivarli da groupPrefix, oppure impostare nomi espliciti.
+param encryptedGroupName = ''
+param notEncryptedGroupName = ''
+param keyEscrowedGroupName = ''
+param keyMissingGroupName = ''
+
+// Gruppi opzionali (il gruppo Encrypted e' sempre attivo). Default: disabilitati.
+param enableNotEncryptedGroup = false
+param enableKeyEscrowedGroup = false
+param enableKeyMissingGroup = false
+
 param targetOperatingSystem = 'Windows'
 param scheduleIntervalHours = 6
 param deployLogAnalytics = true

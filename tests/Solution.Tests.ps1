@@ -38,6 +38,13 @@ Describe 'Parametri del runbook' {
     }
     It 'Espone il parametro <Name>' -ForEach @(
         @{ Name = 'GroupPrefix' }
+        @{ Name = 'EncryptedGroupName' }
+        @{ Name = 'NotEncryptedGroupName' }
+        @{ Name = 'KeyEscrowedGroupName' }
+        @{ Name = 'KeyMissingGroupName' }
+        @{ Name = 'EnableNotEncryptedGroup' }
+        @{ Name = 'EnableKeyEscrowedGroup' }
+        @{ Name = 'EnableKeyMissingGroup' }
         @{ Name = 'TargetOperatingSystem' }
         @{ Name = 'WhatIfOnly' }
         @{ Name = 'KeyMissingAlertThreshold' }
@@ -45,6 +52,21 @@ Describe 'Parametri del runbook' {
         @{ Name = 'NotifyWebhookUrl' }
     ) {
         $script:paramNames | Should -Contain $Name
+    }
+}
+
+Describe 'Gruppi opzionali' {
+    BeforeAll { $script:runbookText = Get-Content $script:runbook -Raw }
+    It 'Il gruppo Encrypted e sempre creato (fuori da condizioni Enable)' {
+        $script:runbookText | Should -Match 'Encrypted = Get-OrCreateGroup'
+    }
+    It 'I gruppi opzionali sono condizionati dagli switch Enable' {
+        $script:runbookText | Should -Match 'if \(\$useNotEncrypted\)'
+        $script:runbookText | Should -Match 'if \(\$useKeyEscrowed\)'
+        $script:runbookText | Should -Match 'if \(\$useKeyMissing\)'
+    }
+    It 'ConvertTo-Bool gestisce le stringhe delle jobSchedule' {
+        $script:runbookText | Should -Match 'function ConvertTo-Bool'
     }
 }
 

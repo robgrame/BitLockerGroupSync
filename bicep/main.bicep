@@ -18,8 +18,29 @@ param runbookName string = 'Sync-BitLockerComplianceGroups'
 @description('URL raw (pubblico) del file .ps1 del runbook. Es. raw.githubusercontent.com/.../Sync-BitLockerComplianceGroups.ps1')
 param runbookContentUri string
 
-@description('Prefisso per il naming dei gruppi Entra gestiti dal runbook.')
+@description('Prefisso per il naming dei gruppi Entra gestiti dal runbook (usato quando i nomi espliciti sono vuoti).')
 param groupPrefix string = 'SG-Intune-BitLocker'
+
+@description('Nome del gruppo PRINCIPALE (device cifrati). Vuoto = derivato da groupPrefix.')
+param encryptedGroupName string = ''
+
+@description('Nome del gruppo opzionale device NON cifrati. Vuoto = derivato da groupPrefix.')
+param notEncryptedGroupName string = ''
+
+@description('Nome del gruppo opzionale device con recovery key in Entra. Vuoto = derivato da groupPrefix.')
+param keyEscrowedGroupName string = ''
+
+@description('Nome del gruppo opzionale device cifrati senza recovery key. Vuoto = derivato da groupPrefix.')
+param keyMissingGroupName string = ''
+
+@description('Abilita il gruppo opzionale device NON cifrati.')
+param enableNotEncryptedGroup bool = false
+
+@description('Abilita il gruppo opzionale device con recovery key in Entra.')
+param enableKeyEscrowedGroup bool = false
+
+@description('Abilita il gruppo opzionale device cifrati senza recovery key.')
+param enableKeyMissingGroup bool = false
 
 @description('Sistema operativo target dei device Intune.')
 param targetOperatingSystem string = 'Windows'
@@ -130,6 +151,13 @@ resource jobSchedule 'Microsoft.Automation/automationAccounts/jobSchedules@2023-
     }
     parameters: {
       GroupPrefix: groupPrefix
+      EncryptedGroupName: encryptedGroupName
+      NotEncryptedGroupName: notEncryptedGroupName
+      KeyEscrowedGroupName: keyEscrowedGroupName
+      KeyMissingGroupName: keyMissingGroupName
+      EnableNotEncryptedGroup: string(enableNotEncryptedGroup)
+      EnableKeyEscrowedGroup: string(enableKeyEscrowedGroup)
+      EnableKeyMissingGroup: string(enableKeyMissingGroup)
       TargetOperatingSystem: targetOperatingSystem
       KeyMissingAlertThreshold: string(keyMissingAlertThreshold)
     }

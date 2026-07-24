@@ -42,16 +42,25 @@ dell'Automation Account (app-only, **zero segreti**).
 
 ## 🧩 Gruppi gestiti
 
-Il runbook crea (se assenti) e riconcilia **in modo idempotente** questi 4 gruppi:
+Il runbook crea (se assente) e riconcilia **in modo idempotente** il gruppo principale
+**Encrypted**. Gli altri tre gruppi sono **opzionali** e disattivati di default: si abilitano
+singolarmente tramite gli appositi flag.
 
-| 🏷️ Gruppo | 📋 Contenuto | 🎯 Uso tipico |
-|---|---|---|
-| `…-Encrypted` | Device con `isEncrypted = true` | Conformità / reportistica |
-| `…-NotEncrypted` | Device con `isEncrypted = false` | Remediation / policy di cifratura |
-| `…-KeyEscrowed` | Device con recovery key salvata in Entra | Prova di escrow / audit |
-| `…-KeyMissing` | Device **cifrati** ma **senza** recovery key | ⚠️ Rischio: nessun recupero possibile |
+| 🏷️ Gruppo | 📋 Contenuto | 🎯 Uso tipico | Stato |
+|---|---|---|---|
+| `…-Encrypted` | Device con `isEncrypted = true` | Conformità / reportistica | ✅ **Sempre attivo** |
+| `…-NotEncrypted` | Device con `isEncrypted = false` | Remediation / policy di cifratura | ⚪ Opzionale (`EnableNotEncryptedGroup`) |
+| `…-KeyEscrowed` | Device con recovery key salvata in Entra | Prova di escrow / audit | ⚪ Opzionale (`EnableKeyEscrowedGroup`) |
+| `…-KeyMissing` | Device **cifrati** ma **senza** recovery key | ⚠️ Rischio: nessun recupero possibile | ⚪ Opzionale (`EnableKeyMissingGroup`) |
 
-> Il prefisso (`SG-Intune-BitLocker` di default) è parametrico.
+> Il prefisso (`SG-Intune-BitLocker` di default) è parametrico. In alternativa è possibile
+> definire il **nome completo** di ciascun gruppo con i parametri `EncryptedGroupName`,
+> `NotEncryptedGroupName`, `KeyEscrowedGroupName`, `KeyMissingGroupName` (se vuoti, il nome
+> viene derivato dal prefisso).
+
+> 💡 Il recupero delle recovery key da Graph avviene **solo** se almeno uno tra il gruppo
+> `KeyEscrowed`, `KeyMissing` o l'alert soglia è attivo: con la sola configurazione di
+> default (solo Encrypted) la chiamata viene saltata per efficienza.
 
 ---
 
@@ -142,6 +151,13 @@ pwsh ./scripts/Grant-GraphPermissions.ps1 -ManagedIdentityPrincipalId <principal
 | `automationAccountName` | `aa-bitlocker-groupsync` | Nome Automation Account |
 | `runbookContentUri` | *(raw GitHub URL)* | Sorgente del runbook `.ps1` |
 | `groupPrefix` | `SG-Intune-BitLocker` | Prefisso naming gruppi |
+| `encryptedGroupName` | *(vuoto → `<prefix>-Encrypted`)* | Nome esplicito gruppo Encrypted |
+| `notEncryptedGroupName` | *(vuoto → `<prefix>-NotEncrypted`)* | Nome esplicito gruppo NotEncrypted |
+| `keyEscrowedGroupName` | *(vuoto → `<prefix>-KeyEscrowed`)* | Nome esplicito gruppo KeyEscrowed |
+| `keyMissingGroupName` | *(vuoto → `<prefix>-KeyMissing`)* | Nome esplicito gruppo KeyMissing |
+| `enableNotEncryptedGroup` | `false` | Abilita il gruppo NotEncrypted (opzionale) |
+| `enableKeyEscrowedGroup` | `false` | Abilita il gruppo KeyEscrowed (opzionale) |
+| `enableKeyMissingGroup` | `false` | Abilita il gruppo KeyMissing (opzionale) |
 | `targetOperatingSystem` | `Windows` | Filtro OS device |
 | `scheduleIntervalHours` | `6` | Cadenza esecuzione |
 | `deployLogAnalytics` | `true` | Crea LA + diagnostica |
@@ -153,6 +169,13 @@ pwsh ./scripts/Grant-GraphPermissions.ps1 -ManagedIdentityPrincipalId <principal
 | Parametro | Default | Descrizione |
 |---|---|---|
 | `GroupPrefix` | `SG-Intune-BitLocker` | Prefisso dei gruppi |
+| `EncryptedGroupName` | *(vuoto → `<prefix>-Encrypted`)* | Nome esplicito gruppo Encrypted |
+| `NotEncryptedGroupName` | *(vuoto → `<prefix>-NotEncrypted`)* | Nome esplicito gruppo NotEncrypted |
+| `KeyEscrowedGroupName` | *(vuoto → `<prefix>-KeyEscrowed`)* | Nome esplicito gruppo KeyEscrowed |
+| `KeyMissingGroupName` | *(vuoto → `<prefix>-KeyMissing`)* | Nome esplicito gruppo KeyMissing |
+| `EnableNotEncryptedGroup` | `false` | Abilita il gruppo NotEncrypted (opzionale) |
+| `EnableKeyEscrowedGroup` | `false` | Abilita il gruppo KeyEscrowed (opzionale) |
+| `EnableKeyMissingGroup` | `false` | Abilita il gruppo KeyMissing (opzionale) |
 | `TargetOperatingSystem` | `Windows` | OS dei device valutati |
 | `WhatIfOnly` | `$false` | Simulazione senza modifiche |
 | `UserAssignedClientId` | *(vuoto)* | Client id di una UAMI (opz.) |

@@ -286,6 +286,43 @@ flowchart LR
 | `teamsLogicAppName` | `logic-bitlocker-teams` | Nome della Logic App |
 | `teamsWebhookUrl` | *(vuoto)* | URL Workflows del canale Teams (vuoto = POST disabilitato) |
 
+#### 🔗 Come ottenere l'URL del canale Teams (Workflows)
+
+> [!NOTE]
+> L'URL **non si genera via script**: è un endpoint legato al canale/tenant e all'identità
+> di chi lo crea, quindi si ottiene una tantum dalla UI. Microsoft ha sostituito i vecchi
+> *Incoming Webhook connector* (in ritiro) con i flussi **Workflows / Power Automate**.
+
+1. In Teams apri il **canale** che deve ricevere le notifiche.
+2. Clicca sui **⋯** (More options) accanto al nome del canale → **Workflows**
+   (in alternativa: app **Workflows** dalla barra laterale, oppure *Power Automate*).
+3. Cerca e seleziona il template **“Post to a channel when a webhook request is received”**
+   (in italiano *“Pubblica in un canale quando viene ricevuta una richiesta webhook”*).
+4. Conferma/accedi con l'account (serve il consenso), poi scegli **Team** e **Canale** di
+   destinazione.
+5. Completa la creazione: il flusso mostra un **URL HTTP POST** — è quello di `teamsWebhookUrl`.
+   Copialo subito (puoi comunque recuperarlo riaprendo il flusso in Power Automate → trigger
+   *“When a Teams webhook request is received”*).
+6. Incolla l'URL in [`bicep/main.bicepparam`](bicep/main.bicepparam):
+
+   ```bicep
+   param deployTeamsLogicApp = true
+   param teamsWebhookUrl = 'https://prod-XX.westeurope.logic.azure.com:443/workflows/.../triggers/manual/paths/invoke?...&sig=...'
+   ```
+
+7. Ridistribuisci lo stack (solo la Logic App viene aggiornata, il resto è idempotente):
+
+   ```bash
+   az deployment group create -g RG-BLKGM -f bicep/main.bicep -p bicep/main.bicepparam
+   ```
+
+> [!TIP]
+> **Test rapido senza aspettare un alert reale**: invia un payload di esempio al trigger della
+> Logic App (recuperi l'URL con `Get-AzLogicAppTriggerCallbackUrl -ResourceGroupName RG-BLKGM
+> -Name logic-bitlocker-teams -TriggerName manual`) con un body in *common alert schema*
+> (`{ "schemaId":"azureMonitorCommonAlertSchema", "data":{ "essentials":{ ... } } }`) e
+> verifica che la card arrivi nel canale.
+
 ### ⚙️ Parametri di monitoraggio (Bicep)
 
 | Parametro | Default | Descrizione |

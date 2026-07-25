@@ -90,6 +90,15 @@ param deadmanWindowHours int = 12
 @description('Se true crea il workbook di Azure Monitor.')
 param deployWorkbook bool = true
 
+@description('Se true crea la Logic App che formatta e inoltra gli alert a Teams. Richiede deployMonitoring=true.')
+param deployTeamsLogicApp bool = false
+
+@description('Nome della Logic App di notifica Teams.')
+param teamsLogicAppName string = 'logic-bitlocker-teams'
+
+@description('URL del canale Teams (Workflows / Power Automate). Vuoto = la Logic App non invia (impostabile in seguito).')
+param teamsWebhookUrl string = ''
+
 @description('Soglia di device cifrati senza recovery key oltre la quale inviare alert. 0 = disabilitato.')
 @minValue(0)
 param keyMissingAlertThreshold int = 0
@@ -263,6 +272,18 @@ module graphPermissions 'graphPermissions.bicep' = if (assignGraphPermissions) {
   }
 }
 
+// Logic App di notifica Teams (opt-in). Formatta il common alert schema in una
+// Adaptive Card e la posta al canale Teams.
+module teamsLogicApp 'teams-logicapp.bicep' = if (deployMonitoring && deployTeamsLogicApp) {
+  name: 'blkgm-teams-logicapp'
+  params: {
+    location: location
+    name: teamsLogicAppName
+    teamsWebhookUrl: teamsWebhookUrl
+    tags: tags
+  }
+}
+
 // Monitoraggio nativo: Action Group + alert rules + workbook (opt-in).
 module monitoring 'monitoring.bicep' = if (deployMonitoring && deployLogAnalytics) {
   name: 'blkgm-monitoring'
@@ -271,7 +292,7 @@ module monitoring 'monitoring.bicep' = if (deployMonitoring && deployLogAnalytic
     logAnalyticsWorkspaceId: logAnalytics.id
     runbookName: runbookName
     alertEmails: alertEmails
-    alertActionWebhookUrl: alertActionWebhookUrl
+    alertActionWebhookUrl: (deployMonitoring && deployTeamsLogicApp) ? teamsLogicApp!.outputs.triggerUrl : alertActionWebhookUrl
     enableFailedAlert: enableFailedAlert
     enableErrorAlert: enableErrorAlert
     enableDeadmanAlert: enableDeadmanAlert

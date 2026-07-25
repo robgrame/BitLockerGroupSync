@@ -255,10 +255,36 @@ flowchart LR
 ### 📢 Action Group & Workbook
 
 - **Action Group** `ag-bitlocker-sync`: invia gli alert a una o più **email** (`alertEmails`)
-  e, se valorizzato, a un **webhook** Teams/Logic App (`alertActionWebhookUrl`, con *common
-  alert schema*). Per Teams è consigliata una Logic App/Workflow che formatti il payload.
+  e, se abilitata la Logic App Teams (o valorizzato `alertActionWebhookUrl`), a un **webhook**.
 - **Workbook** *Nimbus.BitLockerGroupSync - Monitoring*: dashboard con trend degli esiti job,
   ultimi job, errori recenti e righe di riepilogo.
+
+### 💬 Notifiche Teams (Logic App)
+
+Una **Logic App (Consumption)** opzionale (`deployTeamsLogicApp`) fa da *traduttore* tra
+l'Action Group e Teams: riceve il *common alert schema*, lo formatta in una **Adaptive Card**
+e la posta al canale.
+
+```mermaid
+flowchart LR
+    AG["📢 Action Group"] -->|common alert schema| LA["⚙️ Logic App<br/>logic-bitlocker-teams"]
+    LA -->|Adaptive Card| TEAMS["💬 Canale Teams"]
+```
+
+- Il wiring **Action Group → Logic App** è automatico (`listCallbackUrl` → `serviceUri` del
+  webhook): non serve incollare URL manualmente.
+- L'unico valore da fornire è l'**URL di destinazione Teams** (`teamsWebhookUrl`), di tipo
+  **Workflows / Power Automate** (in Teams: canale → *…* → **Workflows** → *"Post to a channel
+  when a webhook request is received"*).
+- Se `teamsWebhookUrl` è **vuoto**, la Logic App viene comunque distribuita ma **non invia**
+  (una condizione salta il POST): puoi impostare l'URL in seguito con un redeploy, senza
+  toccare il resto.
+
+| Parametro | Default | Descrizione |
+|---|---|---|
+| `deployTeamsLogicApp` | `false` | Crea la Logic App di notifica Teams |
+| `teamsLogicAppName` | `logic-bitlocker-teams` | Nome della Logic App |
+| `teamsWebhookUrl` | *(vuoto)* | URL Workflows del canale Teams (vuoto = POST disabilitato) |
 
 ### ⚙️ Parametri di monitoraggio (Bicep)
 

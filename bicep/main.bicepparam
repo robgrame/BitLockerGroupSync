@@ -40,6 +40,11 @@ param enableDeadmanAlert = true
 param deadmanWindowHours = 12
 param deployWorkbook = true
 
+// Logic App di notifica Teams.
+param deployTeamsLogicApp = true
+param teamsLogicAppName = 'logic-bitlocker-teams'
+param teamsWebhookUrl = '' // incollare qui l'URL Workflows del canale Teams
+
 // Ottimizzazioni opzionali
 param keyMissingAlertThreshold = 0
 

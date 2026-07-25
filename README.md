@@ -220,6 +220,61 @@ Esempio payload di notifica:
 
 ---
 
+## 📡 Monitoraggio & alerting (nativo Azure)
+
+Oltre ai webhook applicativi (che scattano solo se il runbook **arriva in fondo**), la
+soluzione include un monitoraggio **nativo Azure** indipendente dal runbook, che copre anche
+i casi in cui il runbook **non parte** o **crasha**. Tutto è opt-in via `deployMonitoring`
+(richiede `deployLogAnalytics = true`) e si basa sui diagnostic log (`JobLogs` + `JobStreams`)
+già inviati al workspace Log Analytics.
+
+```mermaid
+flowchart LR
+    RB["📜 Runbook"] --> LAW["📊 Log Analytics<br/>(JobLogs / JobStreams)"]
+    LAW --> A1["🔴 Job Failed/Suspended"]
+    LAW --> A2["🟠 Error nel runbook"]
+    LAW --> A3["⚫ Dead-man's switch"]
+    A1 & A2 & A3 --> AG["📢 Action Group"]
+    AG --> MAIL["✉️ Email"]
+    AG --> HOOK["🔗 Teams / Logic App"]
+    LAW --> WB["📊 Workbook"]
+```
+
+### 🔔 Alert rules
+
+| Alert | Trigger (KQL) | Finestra / Freq. | Severità |
+|---|---|---|---|
+| 🔴 **Job Failed/Suspended** | `JobLogs` con `ResultType in (Failed, Suspended, Stopped)` | 15 min / 5 min | Sev1 |
+| 🟠 **Errore nel runbook** | `JobStreams` con `StreamType = Error` o messaggio `[ERROR]` | 15 min / 5 min | Sev2 |
+| ⚫ **Dead-man's switch** | 0 job `Completed` nella finestra (schedule off, MI/Graph down, mai avviato) | 12 h / 1 h | Sev1 |
+
+> 💡 Il **dead-man's switch** è la rete di sicurezza chiave: intercetta i problemi che i
+> webhook applicativi **non** possono segnalare (perché il runbook non gira). La finestra
+> accetta solo i valori supportati da Azure Monitor: `2, 3, 4, 5, 6, 12, 24, 48` ore.
+
+### 📢 Action Group & Workbook
+
+- **Action Group** `ag-bitlocker-sync`: invia gli alert a una o più **email** (`alertEmails`)
+  e, se valorizzato, a un **webhook** Teams/Logic App (`alertActionWebhookUrl`, con *common
+  alert schema*). Per Teams è consigliata una Logic App/Workflow che formatti il payload.
+- **Workbook** *Nimbus.BitLockerGroupSync - Monitoring*: dashboard con trend degli esiti job,
+  ultimi job, errori recenti e righe di riepilogo.
+
+### ⚙️ Parametri di monitoraggio (Bicep)
+
+| Parametro | Default | Descrizione |
+|---|---|---|
+| `deployMonitoring` | `true` | Crea Action Group + alert rules + workbook |
+| `alertEmails` | `[]` | Email destinatarie degli alert |
+| `alertActionWebhookUrl` | *(vuoto)* | Webhook Teams/Logic App per gli alert |
+| `enableFailedAlert` | `true` | Alert job Failed/Suspended |
+| `enableErrorAlert` | `true` | Alert errori nello stream |
+| `enableDeadmanAlert` | `true` | Dead-man's switch |
+| `deadmanWindowHours` | `12` | Finestra dead-man's switch (valori: 2,3,4,5,6,12,24,48) |
+| `deployWorkbook` | `true` | Crea il workbook dashboard |
+
+---
+
 ## ⚡ Ottimizzazioni per grandi tenant
 
 - 🧮 **Scritture in `$batch`**: add via `PATCH members@odata.bind` (chunk da 20), remove via JSON `$batch` con **retry dei subrequest falliti**.

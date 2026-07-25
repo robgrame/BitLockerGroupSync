@@ -1,0 +1,91 @@
+{
+  "version": "Notebook/1.0",
+  "items": [
+    {
+      "type": 1,
+      "content": {
+        "json": "## 🔐 Nimbus.BitLockerGroupSync — Runbook monitoring\n\nAttività del runbook **Sync-BitLockerComplianceGroups**: trend dei job, errori e riepiloghi. Il filtro temporale si applica a tutti i pannelli."
+      },
+      "name": "title"
+    },
+    {
+      "type": 9,
+      "content": {
+        "version": "KqlParameterItem/1.0",
+        "parameters": [
+          {
+            "id": "timeRange",
+            "version": "KqlParameterItem/1.0",
+            "name": "TimeRange",
+            "type": 4,
+            "isRequired": true,
+            "value": { "durationMs": 604800000 },
+            "typeSettings": {
+              "selectableValues": [
+                { "durationMs": 86400000 },
+                { "durationMs": 259200000 },
+                { "durationMs": 604800000 },
+                { "durationMs": 2592000000 }
+              ]
+            }
+          }
+        ]
+      },
+      "name": "parameters"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "AzureDiagnostics\n| where ResourceProvider == \"MICROSOFT.AUTOMATION\" and Category == \"JobLogs\"\n| where RunbookName_s == \"Sync-BitLockerComplianceGroups\"\n| where ResultType in (\"Completed\",\"Failed\",\"Suspended\",\"Stopped\")\n| summarize Jobs = count() by ResultType, bin(TimeGenerated, 1h)\n| render columnchart",
+        "size": 0,
+        "title": "📈 Esito job nel tempo",
+        "timeContextFromParameter": "TimeRange",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces"
+      },
+      "name": "job-trend"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "AzureDiagnostics\n| where ResourceProvider == \"MICROSOFT.AUTOMATION\" and Category == \"JobLogs\"\n| where RunbookName_s == \"Sync-BitLockerComplianceGroups\"\n| where ResultType in (\"Completed\",\"Failed\",\"Suspended\",\"Started\",\"Stopped\")\n| project TimeGenerated, ResultType, JobId = JobId_g\n| order by TimeGenerated desc\n| take 50",
+        "size": 0,
+        "title": "🗒️ Ultimi job",
+        "timeContextFromParameter": "TimeRange",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces"
+      },
+      "name": "recent-jobs"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "AzureDiagnostics\n| where ResourceProvider == \"MICROSOFT.AUTOMATION\" and Category == \"JobStreams\"\n| where RunbookName_s == \"Sync-BitLockerComplianceGroups\"\n| where StreamType_s == \"Error\" or ResultDescription contains \"[ERROR]\"\n| project TimeGenerated, StreamType_s, ResultDescription\n| order by TimeGenerated desc\n| take 50",
+        "size": 0,
+        "title": "🚨 Errori recenti",
+        "timeContextFromParameter": "TimeRange",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces"
+      },
+      "name": "recent-errors"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "AzureDiagnostics\n| where ResourceProvider == \"MICROSOFT.AUTOMATION\" and Category == \"JobStreams\"\n| where RunbookName_s == \"Sync-BitLockerComplianceGroups\"\n| where ResultDescription contains \"Riepilogo\" or ResultDescription contains \"Encrypted:\" or ResultDescription contains \"KeyMissing\"\n| project TimeGenerated, ResultDescription\n| order by TimeGenerated desc\n| take 30",
+        "size": 0,
+        "title": "🧾 Righe di riepilogo (verbose)",
+        "timeContextFromParameter": "TimeRange",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces"
+      },
+      "name": "summary-lines"
+    }
+  ],
+  "fallbackResourceIds": [],
+  "$schema": "https://github.com/Microsoft/Application-Insights-Workbooks/blob/master/schema/workbook.json"
+}

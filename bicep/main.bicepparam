@@ -28,6 +28,18 @@ param targetOperatingSystem = 'Windows'
 param scheduleIntervalHours = 6
 param deployLogAnalytics = true
 
+// Monitoraggio nativo Azure (Action Group + alert rules + workbook).
+param deployMonitoring = true
+param alertEmails = [
+  'roberto@gramellini.net'
+]
+param alertActionWebhookUrl = '' // valorizzare con l'URL del canale Teams / Logic App
+param enableFailedAlert = true
+param enableErrorAlert = true
+param enableDeadmanAlert = true
+param deadmanWindowHours = 12
+param deployWorkbook = true
+
 // Ottimizzazioni opzionali
 param keyMissingAlertThreshold = 0
 

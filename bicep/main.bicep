@@ -56,6 +56,40 @@ param scheduleStartTime string = dateTimeAdd(utcNow(), 'PT15M')
 @description('Se true crea un workspace Log Analytics e collega la diagnostica.')
 param deployLogAnalytics bool = true
 
+@description('Se true crea il monitoraggio nativo (Action Group + alert rules + workbook). Richiede deployLogAnalytics=true.')
+param deployMonitoring bool = true
+
+@description('Indirizzi email a cui inviare gli alert di monitoraggio.')
+param alertEmails array = []
+
+@description('URL webhook (Teams/Logic App) a cui inoltrare gli alert. Vuoto = disabilitato.')
+param alertActionWebhookUrl string = ''
+
+@description('Abilita l\'alert sui job Failed/Suspended/Stopped.')
+param enableFailedAlert bool = true
+
+@description('Abilita l\'alert sugli errori nello stream del runbook.')
+param enableErrorAlert bool = true
+
+@description('Abilita il dead-man\'s switch (nessun job completato nella finestra).')
+param enableDeadmanAlert bool = true
+
+@description('Finestra (in ore) del dead-man\'s switch. Solo valori supportati da Azure Monitor.')
+@allowed([
+  2
+  3
+  4
+  5
+  6
+  12
+  24
+  48
+])
+param deadmanWindowHours int = 12
+
+@description('Se true crea il workbook di Azure Monitor.')
+param deployWorkbook bool = true
+
 @description('Soglia di device cifrati senza recovery key oltre la quale inviare alert. 0 = disabilitato.')
 @minValue(0)
 param keyMissingAlertThreshold int = 0
@@ -227,6 +261,27 @@ module graphPermissions 'graphPermissions.bicep' = if (assignGraphPermissions) {
     grantIdentityClientId: permissionGrantIdentityClientId
     tags: tags
   }
+}
+
+// Monitoraggio nativo: Action Group + alert rules + workbook (opt-in).
+module monitoring 'monitoring.bicep' = if (deployMonitoring && deployLogAnalytics) {
+  name: 'blkgm-monitoring'
+  params: {
+    location: location
+    logAnalyticsWorkspaceId: logAnalytics.id
+    runbookName: runbookName
+    alertEmails: alertEmails
+    alertActionWebhookUrl: alertActionWebhookUrl
+    enableFailedAlert: enableFailedAlert
+    enableErrorAlert: enableErrorAlert
+    enableDeadmanAlert: enableDeadmanAlert
+    deadmanWindowHours: deadmanWindowHours
+    deployWorkbook: deployWorkbook
+    tags: tags
+  }
+  dependsOn: [
+    diagnostics
+  ]
 }
 
 @description('Principal Id della system-assigned managed identity: usarlo per assegnare i permessi Graph.')

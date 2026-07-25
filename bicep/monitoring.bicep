@@ -174,6 +174,14 @@ AzureDiagnostics
 //  finestra: intercetta schedule disabilitata, MI/Graph down, runbook mai
 //  avviato. La summarize restituisce sempre una riga (Completed=0 se nessun
 //  job), quindi la regola valuta anche l'assenza di dati.
+//  Design: query scalare `summarize count()` (pattern corretto per un dead-man,
+//  perche' restituisce sempre una riga con Completed=0 quando non c'e' nulla).
+//  L'API richiede numberOfEvaluationPeriods=1 per query scalari senza colonna
+//  TimeGenerated proiettata. autoMitigate=true: se dopo il fire arriva una run
+//  completata, l'alert si risolve da solo. NOTA: alla prima valutazione dopo la
+//  creazione/redeploy la regola puo' emettere una singola attivazione transitoria
+//  (latenza di ingestion dei JobLogs) che si auto-risolve: e' un comportamento
+//  noto di Azure Monitor, non un problema del runbook.
 // ---------------------------------------------------------------------------
 resource deadmanAlert 'Microsoft.Insights/scheduledQueryRules@2023-03-15-preview' = if (enableDeadmanAlert) {
   name: 'alert-blkgm-no-successful-run'

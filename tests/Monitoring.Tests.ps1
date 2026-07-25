@@ -45,6 +45,9 @@ Describe 'Modulo monitoring.bicep' {
         $script:text | Should -Match "metricMeasureColumn: 'Completed'"
         $script:text | Should -Match "operator: 'LessThan'"
     }
+    It 'Il dead-man''s switch si auto-risolve (autoMitigate)' {
+        $script:text | Should -Match 'autoMitigate: true'
+    }
     It 'deadmanWindowHours limita ai valori supportati da Azure Monitor' {
         $script:text | Should -Match '@allowed\('
         $script:text | Should -Match ([regex]::Escape("windowSize: 'PT`${deadmanWindowHours}H'"))

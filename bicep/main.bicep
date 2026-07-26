@@ -182,6 +182,13 @@ resource schedule 'Microsoft.Automation/automationAccounts/schedules@2023-11-01'
   }
 }
 
+// ATTENZIONE: i jobSchedule di Azure Automation sono IMMUTABILI. Il nome è un GUID
+// deterministico (runbook+schedule), quindi un redeploy che cambia SOLO i `parameters`
+// qui sotto NON aggiorna il link esistente: le run schedulate continueranno a usare i
+// parametri con cui il jobSchedule fu creato la prima volta. Per applicare nuovi parametri
+// (es. abilitare i gruppi opzionali) bisogna rimuovere e ricreare il jobSchedule, es.:
+//   Unregister-AzAutomationScheduledRunbook -JobScheduleId <id> -Force
+//   Register-AzAutomationScheduledRunbook -RunbookName <rb> -ScheduleName <sch> -Parameters @{...}
 resource jobSchedule 'Microsoft.Automation/automationAccounts/jobSchedules@2023-11-01' = {
   parent: automationAccount
   name: guid(automationAccount.id, runbookName, scheduleName)

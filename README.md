@@ -381,6 +381,7 @@ flowchart LR
 | `Modulo Microsoft.Graph.Authentication non disponibile` | Modulo non importato | Verificare la risorsa `powerShell72Modules` |
 | Device non aggiunti | `azureADDeviceId` assente o device non in Entra | Verificare Entra join / registrazione |
 | Molti in `NonRisolti` | Mismatch deviceId ↔ objectId | Verificare sync Intune/Entra |
+| Le run **schedulate** gestiscono solo il gruppo Encrypted dopo aver abilitato i gruppi opzionali | I jobSchedule di Azure Automation sono **immutabili**: un redeploy non aggiorna i `parameters` del link esistente | Rimuovere e ricreare il jobSchedule: `Unregister-AzAutomationScheduledRunbook -JobScheduleId <id> -Force` poi `Register-AzAutomationScheduledRunbook -RunbookName <rb> -ScheduleName <sch> -Parameters @{ EnableNotEncryptedGroup='true'; EnableKeyEscrowedGroup='true'; EnableKeyMissingGroup='true' }` |
 
 ---
 

@@ -62,6 +62,12 @@ singolarmente tramite gli appositi flag.
 > `KeyEscrowed`, `KeyMissing` o l'alert soglia è attivo: con la sola configurazione di
 > default (solo Encrypted) la chiamata viene saltata per efficienza.
 
+> 🔒 **Master switch `EnableKeyEscrowCheck`** (default `true`): la verifica dell'escrow della
+> recovery key è un controllo "puntuale" su Entra. Impostando `EnableKeyEscrowCheck=false` il
+> runbook **salta del tutto** il recupero delle chiavi e **disabilita** i gruppi `KeyEscrowed`/
+> `KeyMissing` e l'alert di soglia, a prescindere dai loro flag. Il gruppo **Encrypted**
+> (basato solo su `isEncrypted`) **non è influenzato**.
+
 ---
 
 ## 🏗️ Architettura
@@ -158,6 +164,7 @@ pwsh ./scripts/Grant-GraphPermissions.ps1 -ManagedIdentityPrincipalId <principal
 | `enableNotEncryptedGroup` | `false` | Abilita il gruppo NotEncrypted (opzionale) |
 | `enableKeyEscrowedGroup` | `false` | Abilita il gruppo KeyEscrowed (opzionale) |
 | `enableKeyMissingGroup` | `false` | Abilita il gruppo KeyMissing (opzionale) |
+| `enableKeyEscrowCheck` | `true` | Master switch verifica escrow: `false` salta il recupero chiavi e disabilita KeyEscrowed/KeyMissing/alert |
 | `targetOperatingSystem` | `Windows` | Filtro OS device |
 | `scheduleIntervalHours` | `6` | Cadenza esecuzione |
 | `deployLogAnalytics` | `true` | Crea LA + diagnostica |
@@ -176,6 +183,7 @@ pwsh ./scripts/Grant-GraphPermissions.ps1 -ManagedIdentityPrincipalId <principal
 | `EnableNotEncryptedGroup` | `false` | Abilita il gruppo NotEncrypted (opzionale) |
 | `EnableKeyEscrowedGroup` | `false` | Abilita il gruppo KeyEscrowed (opzionale) |
 | `EnableKeyMissingGroup` | `false` | Abilita il gruppo KeyMissing (opzionale) |
+| `EnableKeyEscrowCheck` | `true` | Master switch verifica escrow: `false` salta il recupero chiavi e disabilita KeyEscrowed/KeyMissing/alert soglia |
 | `TargetOperatingSystem` | `Windows` | OS dei device valutati |
 | `WhatIfOnly` | `$false` | Simulazione senza modifiche |
 | `UserAssignedClientId` | *(vuoto)* | Client id di una UAMI (opz.) |

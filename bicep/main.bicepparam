@@ -24,6 +24,11 @@ param enableNotEncryptedGroup = true
 param enableKeyEscrowedGroup = true
 param enableKeyMissingGroup = true
 
+// Master switch verifica escrow recovery key. true = comportamento attuale (recupero chiavi
+// quando servono KeyEscrowed/KeyMissing/alert). Impostare a false per saltare del tutto il
+// controllo puntuale delle recovery key (il gruppo Encrypted non e' influenzato).
+param enableKeyEscrowCheck = true
+
 param targetOperatingSystem = 'Windows'
 param scheduleIntervalHours = 6
 param deployLogAnalytics = true

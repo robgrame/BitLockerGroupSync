@@ -42,6 +42,9 @@ param enableKeyEscrowedGroup bool = false
 @description('Abilita il gruppo opzionale device cifrati senza recovery key.')
 param enableKeyMissingGroup bool = false
 
+@description('Master switch della verifica escrow recovery key. false = salta il recupero chiavi e disabilita KeyEscrowed/KeyMissing/alert soglia (il gruppo Encrypted non e\' influenzato).')
+param enableKeyEscrowCheck bool = true
+
 @description('Sistema operativo target dei device Intune.')
 param targetOperatingSystem string = 'Windows'
 
@@ -208,6 +211,7 @@ resource jobSchedule 'Microsoft.Automation/automationAccounts/jobSchedules@2023-
       EnableNotEncryptedGroup: string(enableNotEncryptedGroup)
       EnableKeyEscrowedGroup: string(enableKeyEscrowedGroup)
       EnableKeyMissingGroup: string(enableKeyMissingGroup)
+      EnableKeyEscrowCheck: string(enableKeyEscrowCheck)
       TargetOperatingSystem: targetOperatingSystem
       KeyMissingAlertThreshold: string(keyMissingAlertThreshold)
     }

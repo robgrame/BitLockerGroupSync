@@ -22,6 +22,11 @@
     EnableKeyMissingGroup. Il nome di ciascun gruppo e' personalizzabile tramite i parametri
     *GroupName; se non specificato viene derivato da GroupPrefix.
 
+    La verifica dell'escrow della recovery key (controllo "puntuale" su Entra) e' governata dal
+    master switch EnableKeyEscrowCheck (default 'true'). Impostandolo a 'false' il runbook salta
+    del tutto il recupero delle recovery key e disabilita i gruppi/alert che ne dipendono
+    (KeyEscrowed, KeyMissing, alert di soglia); il gruppo Encrypted non e' influenzato.
+
     Ottimizzazioni:
       - Scritture di membership in $batch (chunk da 20) per ridurre le chiamate.
       - Filtro dei device retired/wiped (stale) prima della valutazione.
@@ -74,6 +79,14 @@ param(
 
     [Parameter()]
     [string]$EnableKeyMissingGroup = 'false',
+
+    # --- Verifica dell'escrow della recovery key (controllo "puntuale" su Entra). ---
+    # Master switch: quando 'false' salta COMPLETAMENTE il recupero/verifica delle recovery key
+    # e neutralizza i gruppi/alert che ne dipendono (KeyEscrowed, KeyMissing, alert di soglia),
+    # a prescindere dai rispettivi flag. Il gruppo Encrypted (basato solo su isEncrypted) non e'
+    # influenzato. Default 'true' per non alterare il comportamento esistente.
+    [Parameter()]
+    [string]$EnableKeyEscrowCheck = 'true',
 
     # Sistema operativo dei device da valutare (filtro su managedDevice.operatingSystem).
     [Parameter()]
@@ -396,16 +409,29 @@ try {
 
     # Abilitazione gruppi opzionali (conversione robusta da stringa).
     $useNotEncrypted = ConvertTo-Bool $EnableNotEncryptedGroup
+    $escrowCheck     = ConvertTo-Bool $EnableKeyEscrowCheck
     $useKeyEscrowed  = ConvertTo-Bool $EnableKeyEscrowedGroup
     $useKeyMissing   = ConvertTo-Bool $EnableKeyMissingGroup
 
-    # Le recovery key servono solo se serve valutare KeyEscrowed/KeyMissing (gruppi o alert soglia).
-    $needKeys = $useKeyEscrowed -or $useKeyMissing -or ($KeyMissingAlertThreshold -gt 0)
+    # Master switch: se la verifica escrow e' disabilitata, i gruppi/alert che dipendono
+    # dalle recovery key vengono neutralizzati (con warning se erano stati richiesti).
+    if (-not $escrowCheck) {
+        if ($useKeyEscrowed -or $useKeyMissing -or ($KeyMissingAlertThreshold -gt 0)) {
+            Write-Log 'EnableKeyEscrowCheck=false: verifica escrow disabilitata; gruppi KeyEscrowed/KeyMissing e alert di soglia ignorati.' 'WARN'
+        }
+        $useKeyEscrowed = $false
+        $useKeyMissing  = $false
+    }
+
+    # Le recovery key servono solo se la verifica escrow e' attiva E serve valutare KeyEscrowed/KeyMissing (gruppi o alert soglia).
+    $needKeys = $escrowCheck -and ($useKeyEscrowed -or $useKeyMissing -or ($KeyMissingAlertThreshold -gt 0))
 
     Write-Log ("Gruppi attivi: Encrypted (principale)" + `
         $($useNotEncrypted ? ', NotEncrypted' : '') + `
         $($useKeyEscrowed  ? ', KeyEscrowed'  : '') + `
         $($useKeyMissing   ? ', KeyMissing'   : ''))
+    Write-Log ("Verifica escrow recovery key: " + ($escrowCheck ? 'ABILITATA' : 'DISABILITATA') + `
+        ($needKeys ? ' (recupero chiavi necessario)' : ' (recupero chiavi saltato)'))
 
     # 1) Gruppi target (Encrypted sempre; gli altri solo se abilitati).
     $script:NewGroupCreated = $false
@@ -463,8 +489,12 @@ try {
         $hasKey = $devicesWithKey.Contains($aadId)
 
         if ($isEncrypted) { $desired.Encrypted.Add($objectId) } else { $desired.NotEncrypted.Add($objectId) }
-        if ($hasKey) { $desired.KeyEscrowed.Add($objectId) }
-        elseif ($isEncrypted) { $desired.KeyMissing.Add($objectId) }  # cifrato ma senza chiave = rischio
+        # Insiemi basati sulle recovery key: popolati SOLO se la verifica escrow e' attiva,
+        # altrimenti KeyMissing conterrebbe erroneamente tutti i device cifrati (devicesWithKey vuoto).
+        if ($needKeys) {
+            if ($hasKey) { $desired.KeyEscrowed.Add($objectId) }
+            elseif ($isEncrypted) { $desired.KeyMissing.Add($objectId) }  # cifrato ma senza chiave = rischio
+        }
     }
     if ($unresolved -gt 0) { Write-Log "$unresolved device Intune senza corrispondente oggetto Entra (ignorati)." 'WARN' }
 
@@ -513,8 +543,8 @@ try {
             })
     }
 
-    # 7b) Alert opzionale su device cifrati senza recovery key
-    if ($KeyMissingAlertThreshold -gt 0 -and $desired.KeyMissing.Count -ge $KeyMissingAlertThreshold) {
+    # 7b) Alert opzionale su device cifrati senza recovery key (solo se la verifica escrow e' attiva)
+    if ($needKeys -and $KeyMissingAlertThreshold -gt 0 -and $desired.KeyMissing.Count -ge $KeyMissingAlertThreshold) {
         $hook = $AlertWebhookUrl
         if ([string]::IsNullOrWhiteSpace($hook)) {
             try { $hook = Get-AutomationVariable -Name 'BitLockerSyncAlertWebhook' -ErrorAction Stop } catch { $hook = '' }

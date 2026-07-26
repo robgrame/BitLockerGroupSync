@@ -103,8 +103,12 @@ Describe 'Wiring in main.bicep' {
         @{ Name = 'deployTeamsLogicApp' }
         @{ Name = 'teamsLogicAppName' }
         @{ Name = 'teamsWebhookUrl' }
+        @{ Name = 'enableKeyEscrowCheck' }
     ) {
         $script:text | Should -Match "param $Name "
+    }
+    It 'Passa EnableKeyEscrowCheck alla jobSchedule' {
+        $script:text | Should -Match 'EnableKeyEscrowCheck: string\(enableKeyEscrowCheck\)'
     }
     It 'Invoca il modulo monitoring gated da deployLogAnalytics' {
         $script:text | Should -Match "module monitoring 'monitoring.bicep' = if \(deployMonitoring && deployLogAnalytics\)"

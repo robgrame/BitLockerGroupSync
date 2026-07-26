@@ -45,6 +45,7 @@ Describe 'Parametri del runbook' {
         @{ Name = 'EnableNotEncryptedGroup' }
         @{ Name = 'EnableKeyEscrowedGroup' }
         @{ Name = 'EnableKeyMissingGroup' }
+        @{ Name = 'EnableKeyEscrowCheck' }
         @{ Name = 'TargetOperatingSystem' }
         @{ Name = 'WhatIfOnly' }
         @{ Name = 'KeyMissingAlertThreshold' }
@@ -67,6 +68,16 @@ Describe 'Gruppi opzionali' {
     }
     It 'ConvertTo-Bool gestisce le stringhe delle jobSchedule' {
         $script:runbookText | Should -Match 'function ConvertTo-Bool'
+    }
+    It 'Il master switch EnableKeyEscrowCheck neutralizza il recupero chiavi' {
+        $script:runbookText | Should -Match '\$escrowCheck\s*=\s*ConvertTo-Bool \$EnableKeyEscrowCheck'
+        $script:runbookText | Should -Match '\$needKeys\s*=\s*\$escrowCheck -and'
+    }
+    It 'Gli insiemi KeyEscrowed/KeyMissing sono calcolati solo se needKeys' {
+        $script:runbookText | Should -Match 'if \(\$needKeys\) \{[\s\S]*KeyEscrowed\.Add'
+    }
+    It 'L''alert di soglia richiede la verifica escrow attiva' {
+        $script:runbookText | Should -Match 'if \(\$needKeys -and \$KeyMissingAlertThreshold'
     }
 }
 

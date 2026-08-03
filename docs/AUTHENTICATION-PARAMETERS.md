@@ -59,8 +59,8 @@ param authenticationMode = 'ManagedIdentity'
 param managedIdentityName = 'id-bitlocker-groupsync'
 param appTenantId = ''
 param appClientId = ''
-param certificateAssetName = 'NimbusGraphAuth'
-param graphCredentialVariableName = 'NimbusGraphClientSecret'
+param certificateAssetName = 'GraphAuthCertificate'
+param graphCredentialVariableName = 'GraphClientSecret'
 param appClientSecret = ''
 ```
 
@@ -91,8 +91,8 @@ param authenticationMode = 'AppRegistrationCertificate'
 param managedIdentityName = 'id-bitlocker-groupsync'
 param appTenantId = '<TENANT-ID>'
 param appClientId = '<APPLICATION-CLIENT-ID>'
-param certificateAssetName = 'NimbusGraphAuth'
-param graphCredentialVariableName = 'NimbusGraphClientSecret'
+param certificateAssetName = 'GraphAuthCertificate'
+param graphCredentialVariableName = 'GraphClientSecret'
 param appClientSecret = ''
 ```
 
@@ -114,7 +114,7 @@ $pfxPassword = Read-Host 'Password PFX' -AsSecureString
     -ResourceGroupName 'RG-ENCRYPTED_DEVICES' `
     -Location 'italynorth' `
     -ParameterFile .\bicep\customer.local.bicepparam `
-    -AppCertificatePfxPath 'C:\Secure\NimbusGraphAuth.pfx' `
+    -AppCertificatePfxPath 'C:\Secure\GraphAuthCertificate.pfx' `
     -AppCertificatePfxPassword $pfxPassword `
     -PermissionsConfirmed `
     -StartJobNow
@@ -139,8 +139,8 @@ param authenticationMode = 'AppRegistrationSecret'
 param managedIdentityName = 'id-bitlocker-groupsync'
 param appTenantId = '<TENANT-ID>'
 param appClientId = '<APPLICATION-CLIENT-ID>'
-param certificateAssetName = 'NimbusGraphAuth'
-param graphCredentialVariableName = 'NimbusGraphClientSecret'
+param certificateAssetName = 'GraphAuthCertificate'
+param graphCredentialVariableName = 'GraphClientSecret'
 param appClientSecret = ''
 ```
 

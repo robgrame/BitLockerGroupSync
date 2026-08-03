@@ -4,6 +4,7 @@ BeforeAll {
     $script:root = Split-Path $PSScriptRoot -Parent
     $script:bicepDir = Join-Path $root 'bicep'
     $script:mainBicep = Join-Path $bicepDir 'main.bicep'
+    $script:parameterFile = Join-Path $bicepDir 'main.bicepparam'
     $script:monitoring = Join-Path $bicepDir 'monitoring.bicep'
     $script:teams = Join-Path $bicepDir 'teams-logicapp.bicep'
     $script:workbook = Join-Path $bicepDir 'workbooks\runbook-monitoring.workbook.json'
@@ -16,6 +17,33 @@ Describe 'File di monitoraggio presenti' {
         @{ Name = 'workbook JSON'; Path = { $script:workbook } }
     ) {
         Test-Path (& $Path) | Should -BeTrue
+    }
+}
+
+Describe 'Default cliente dei parametri Bicep' {
+    BeforeAll { $script:parameterText = Get-Content $script:parameterFile -Raw }
+
+    It 'Disabilita gruppi opzionali e verifica escrow' {
+        foreach ($parameterName in @(
+                'enableNotEncryptedGroup',
+                'enableKeyEscrowedGroup',
+                'enableKeyMissingGroup',
+                'enableKeyEscrowCheck'
+            )) {
+            $script:parameterText | Should -Match "param $parameterName = false"
+        }
+    }
+
+    It 'Usa il nome esplicito del gruppo cifrato senza prefisso' {
+        $script:parameterText | Should -Match "param groupPrefix = ''"
+        $script:parameterText | Should -Match "param encryptedGroupName = 'Intune - BitLocker Encrypted'"
+    }
+
+    It 'Usa nomi di asset e tag senza branding Nimbus' {
+        $parameterWithoutSourceUri = $script:parameterText -replace "(?m)^param runbookContentUri = .*\r?\n", ''
+        $parameterWithoutSourceUri | Should -Not -Match 'Nimbus'
+        $script:parameterText | Should -Match "certificateAssetName = 'GraphAuthCertificate'"
+        $script:parameterText | Should -Match "graphCredentialVariableName = 'GraphClientSecret'"
     }
 }
 
@@ -158,6 +186,14 @@ Describe 'Wiring in main.bicep' {
         $runtimeParams = [regex]::Match($script:text, 'var runbookParameters = \{(?<body>[\s\S]*?)\r?\n\}')
         $runtimeParams.Success | Should -BeTrue
         $runtimeParams.Groups['body'].Value | Should -Not -Match 'appClientSecret'
+    }
+
+    It 'Forza il refresh del contenuto pubblicato del runbook a ogni deployment' {
+        $script:text | Should -Match 'publishContentLink:\s*\{[\s\S]*version:\s*deployment\(\)\.name'
+    }
+
+    It 'Usa un nuovo ID jobSchedule a ogni deployment' {
+        $script:text | Should -Match 'name:\s*guid\(automationAccount\.id, runbookName, scheduleName, deployment\(\)\.name\)'
     }
     It 'Salva il client secret in una Automation Variable cifrata' {
         $script:text | Should -Match "authenticationMode == 'AppRegistrationSecret'"

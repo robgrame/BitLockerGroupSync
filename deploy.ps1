@@ -90,7 +90,7 @@
     $pfxPassword = Read-Host 'Password PFX' -AsSecureString
     .\deploy.ps1 -ResourceGroupName 'rg-bitlocker-prod' `
         -ParameterFile '.\bicep\customer.local.bicepparam' `
-        -AppCertificatePfxPath 'C:\Secure\NimbusGraphAuth.pfx' `
+        -AppCertificatePfxPath 'C:\Secure\GraphAuthCertificate.pfx' `
         -AppCertificatePfxPassword $pfxPassword
     Distribuisce la soluzione usando la modalita AppRegistrationCertificate
     configurata nel file .bicepparam.
@@ -284,11 +284,22 @@ function Remove-ExistingJobScheduleLink {
 
     foreach ($link in $links) {
         Write-Host "==> Rimozione jobSchedule esistente '$($link.JobScheduleId)' per aggiornare i parametri runtime..." -ForegroundColor Cyan
+        $jobScheduleResourceId = "$($account.Id)/jobSchedules/$($link.JobScheduleId)"
         Unregister-AzAutomationScheduledRunbook `
             -ResourceGroupName $ResourceGroupName `
             -AutomationAccountName $AutomationAccountName `
             -JobScheduleId $link.JobScheduleId `
             -Force
+
+        $deadline = (Get-Date).AddMinutes(2)
+        do {
+            $remaining = Get-AzResource -ResourceId $jobScheduleResourceId -ErrorAction SilentlyContinue
+            if (-not $remaining) { break }
+            if ((Get-Date) -ge $deadline) {
+                throw "Timeout durante la rimozione del jobSchedule '$($link.JobScheduleId)'."
+            }
+            Start-Sleep -Seconds 2
+        } while ($true)
     }
 }
 
@@ -354,9 +365,23 @@ function ConvertTo-StringHashtable {
     return $result
 }
 
+function ConvertTo-DirectRunbookHashtable {
+    param([Parameter(Mandatory)][hashtable]$Parameters)
+
+    $result = $Parameters.Clone()
+    try {
+        $result['KeyMissingAlertThreshold'] = [int]$result['KeyMissingAlertThreshold']
+    }
+    catch {
+        throw "KeyMissingAlertThreshold non e un intero valido: '$($result['KeyMissingAlertThreshold'])'."
+    }
+    return $result
+}
+
 $resolvedParameterFile = (Resolve-Path -LiteralPath $ParameterFile -ErrorAction Stop).Path
 
 if (-not $SkipBootstrap) { Initialize-DeploymentTooling }
+Add-BicepToProcessPath
 
 Import-Module Az.Accounts -MinimumVersion 5.0.0 -ErrorAction Stop
 Import-Module Az.Resources -MinimumVersion 8.0.0 -ErrorAction Stop
@@ -386,13 +411,13 @@ $AppCertificateAssetName = if ($parameterValues.certificateAssetName) {
     [string]$parameterValues.certificateAssetName.value
 }
 else {
-    'NimbusGraphAuth'
+    'GraphAuthCertificate'
 }
 $AppClientSecretVariableName = if ($parameterValues.graphCredentialVariableName) {
     [string]$parameterValues.graphCredentialVariableName.value
 }
 else {
-    'NimbusGraphClientSecret'
+    'GraphClientSecret'
 }
 $configuredAutomationAccountName = if ($parameterValues.automationAccountName) {
     [string]$parameterValues.automationAccountName.value
@@ -545,6 +570,7 @@ $managedIdentityResourceId = [string]$deployment.Outputs.managedIdentityResource
 $aaName = $deployment.Outputs.automationAccountName.Value
 $rbName = $deployment.Outputs.runbookName.Value
 $runbookParameters = ConvertTo-StringHashtable -InputObject $deployment.Outputs.runbookParameters.Value
+$directRunbookParameters = ConvertTo-DirectRunbookHashtable -Parameters $runbookParameters
 if ($AuthenticationMode -eq 'ManagedIdentity') {
     Write-Host "    UAMI resourceId:  $managedIdentityResourceId" -ForegroundColor Green
     Write-Host "    UAMI clientId:    $managedIdentityClientId" -ForegroundColor Green
@@ -602,7 +628,7 @@ if ($CreateTriggerWebhook) {
         -AutomationAccountName $aaName `
         -Name "$rbName-trigger" `
         -RunbookName $rbName `
-        -Parameters $runbookParameters `
+        -Parameters $directRunbookParameters `
         -IsEnabled $true `
         -ExpiryTime $expiry `
         -Force
@@ -619,7 +645,7 @@ if ($StartJobNow) {
         -AutomationAccountName $aaName `
         -ResourceGroupName $ResourceGroupName `
         -Name $rbName `
-        -Parameters $runbookParameters | Out-Null
+        -Parameters $directRunbookParameters | Out-Null
 }
 
 Write-Host '==> Deploy completato.' -ForegroundColor Green

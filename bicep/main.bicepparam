@@ -12,34 +12,34 @@ param runbookName = 'Sync-BitLockerComplianceGroups'
 // URL raw del runbook nel repo pubblico (branch main).
 param runbookContentUri = 'https://raw.githubusercontent.com/robgrame/Nimbus.BitLockerGroupSync/main/runbook/Sync-BitLockerComplianceGroups.ps1'
 
-param groupPrefix = 'SG-Intune-BitLocker'
+param groupPrefix = ''
 
 // Nomi gruppi: lasciare vuoti per derivarli da groupPrefix, oppure impostare nomi espliciti.
-param encryptedGroupName = ''
+param encryptedGroupName = 'Intune - BitLocker Encrypted'
 param notEncryptedGroupName = ''
 param keyEscrowedGroupName = ''
 param keyMissingGroupName = ''
 
 // Gruppi opzionali (il gruppo Encrypted e' sempre attivo). Default: disabilitati.
-param enableNotEncryptedGroup = true
-param enableKeyEscrowedGroup = true
-param enableKeyMissingGroup = true
+param enableNotEncryptedGroup = false
+param enableKeyEscrowedGroup = false
+param enableKeyMissingGroup = false
 
 // Master switch verifica escrow recovery key. true = comportamento attuale (recupero chiavi
 // quando servono KeyEscrowed/KeyMissing/alert). Impostare a false per saltare del tutto il
 // controllo puntuale delle recovery key (il gruppo Encrypted non e' influenzato).
-param enableKeyEscrowCheck = true
+param enableKeyEscrowCheck = false
 
 param targetOperatingSystem = 'Windows'
 
 // Autenticazione Graph:
 // ManagedIdentity | AppRegistrationCertificate | AppRegistrationSecret
 param authenticationMode = 'ManagedIdentity'
-param managedIdentityName = 'id-bitlocker-groupsync'
+param managedIdentityName = 'id-blk-groupsync'
 param appTenantId = ''
 param appClientId = ''
-param certificateAssetName = 'NimbusGraphAuth'
-param graphCredentialVariableName = 'NimbusGraphClientSecret'
+param certificateAssetName = 'GraphAuthCertificate'
+param graphCredentialVariableName = 'GraphClientSecret'
 param appClientSecret = ''
 
 param scheduleIntervalHours = 6
@@ -75,7 +75,7 @@ param permissionGrantIdentityId = ''
 param permissionGrantIdentityClientId = ''
 
 param tags = {
-  solution: 'Nimbus.BitLockerGroupSync'
+  solution: 'BitLockerGroupSync'
   managedBy: 'bicep'
   environment: 'prod'
 }

@@ -288,7 +288,7 @@ $pfxPassword = Read-Host 'Password PFX' -AsSecureString
     -TenantId $TenantId `
     -SubscriptionId $SubscriptionId `
     -ParameterFile .\bicep\customer.local.bicepparam `
-    -AppCertificatePfxPath 'C:\Secure\NimbusGraphAuth.pfx' `
+    -AppCertificatePfxPath 'C:\Secure\GraphAuthCertificate.pfx' `
     -AppCertificatePfxPassword $pfxPassword
 ```
 

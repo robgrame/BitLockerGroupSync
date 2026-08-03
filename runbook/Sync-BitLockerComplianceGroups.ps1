@@ -23,7 +23,7 @@
     *GroupName; se non specificato viene derivato da GroupPrefix.
 
     La verifica dell'escrow della recovery key (controllo "puntuale" su Entra) e' governata dal
-    master switch EnableKeyEscrowCheck (default 'true'). Impostandolo a 'false' il runbook salta
+    master switch EnableKeyEscrowCheck (default 'false'). Quando e' 'false' il runbook salta
     del tutto il recupero delle recovery key e disabilita i gruppi/alert che ne dipendono
     (KeyEscrowed, KeyMissing, alert di soglia); il gruppo Encrypted non e' influenzato.
 
@@ -49,12 +49,12 @@
 param(
     # Prefisso usato per il naming dei gruppi quando non ne viene specificato il nome esplicito.
     [Parameter()]
-    [string]$GroupPrefix = 'SG-Intune-BitLocker',
+    [string]$GroupPrefix = '',
 
     # --- Nomi dei gruppi (personalizzabili). Se lasciati vuoti vengono derivati da GroupPrefix. ---
     # Gruppo PRINCIPALE: device con disco cifrato (isEncrypted=true). Sempre creato/gestito.
     [Parameter()]
-    [string]$EncryptedGroupName = '',
+    [string]$EncryptedGroupName = 'Intune - BitLocker Encrypted',
 
     # Gruppo OPZIONALE: device con disco NON cifrato (isEncrypted=false).
     [Parameter()]
@@ -84,9 +84,9 @@ param(
     # Master switch: quando 'false' salta COMPLETAMENTE il recupero/verifica delle recovery key
     # e neutralizza i gruppi/alert che ne dipendono (KeyEscrowed, KeyMissing, alert di soglia),
     # a prescindere dai rispettivi flag. Il gruppo Encrypted (basato solo su isEncrypted) non e'
-    # influenzato. Default 'true' per non alterare il comportamento esistente.
+    # influenzato. Default 'false'.
     [Parameter()]
-    [string]$EnableKeyEscrowCheck = 'true',
+    [string]$EnableKeyEscrowCheck = 'false',
 
     # Sistema operativo dei device da valutare (filtro su managedDevice.operatingSystem).
     [Parameter()]
@@ -115,11 +115,11 @@ param(
 
     # Nome dell'Automation Certificate contenente il PFX con private key.
     [Parameter()]
-    [string]$CertificateAssetName = 'NimbusGraphAuth',
+    [string]$CertificateAssetName = 'GraphAuthCertificate',
 
     # Nome dell'Automation Variable cifrata contenente il client secret.
     [Parameter()]
-    [string]$ClientSecretVariableName = 'NimbusGraphClientSecret',
+    [string]$ClientSecretVariableName = 'GraphClientSecret',
 
     # Soglia di device cifrati SENZA recovery key oltre la quale inviare un alert. 0 = disabilitato.
     [Parameter()]

@@ -22,10 +22,10 @@ param runbookName string = 'Sync-BitLockerComplianceGroups'
 param runbookContentUri string
 
 @description('Prefisso per il naming dei gruppi Entra gestiti dal runbook (usato quando i nomi espliciti sono vuoti).')
-param groupPrefix string = 'SG-Intune-BitLocker'
+param groupPrefix string = ''
 
 @description('Nome del gruppo PRINCIPALE (device cifrati). Vuoto = derivato da groupPrefix.')
-param encryptedGroupName string = ''
+param encryptedGroupName string = 'Intune - BitLocker Encrypted'
 
 @description('Nome del gruppo opzionale device NON cifrati. Vuoto = derivato da groupPrefix.')
 param notEncryptedGroupName string = ''
@@ -46,7 +46,7 @@ param enableKeyEscrowedGroup bool = false
 param enableKeyMissingGroup bool = false
 
 @description('Master switch della verifica escrow recovery key. false = salta il recupero chiavi e disabilita KeyEscrowed/KeyMissing/alert soglia (il gruppo Encrypted non e\' influenzato).')
-param enableKeyEscrowCheck bool = true
+param enableKeyEscrowCheck bool = false
 
 @description('Sistema operativo target dei device Intune.')
 param targetOperatingSystem string = 'Windows'
@@ -69,10 +69,10 @@ param appTenantId string = ''
 param appClientId string = ''
 
 @description('Nome dell\'Automation Certificate usato per AppRegistrationCertificate.')
-param certificateAssetName string = 'NimbusGraphAuth'
+param certificateAssetName string = 'GraphAuthCertificate'
 
 @description('Nome dell\'Automation Variable cifrata usata per AppRegistrationSecret.')
-param graphCredentialVariableName string = 'NimbusGraphClientSecret'
+param graphCredentialVariableName string = 'GraphClientSecret'
 
 @description('Client secret dell\'App Registration. Usato solo per creare la Automation Variable cifrata.')
 @secure()
@@ -163,7 +163,7 @@ param permissionGrantIdentityClientId string = ''
 
 @description('Tag applicati a tutte le risorse.')
 param tags object = {
-  solution: 'Nimbus.BitLockerGroupSync'
+  solution: 'BitLockerGroupSync'
   managedBy: 'bicep'
 }
 
@@ -238,6 +238,8 @@ resource runbook 'Microsoft.Automation/automationAccounts/runbooks@2023-11-01' =
     description: 'Sincronizza gruppi Entra in base a isEncrypted (Intune) e presenza recovery key BitLocker.'
     publishContentLink: {
       uri: runbookContentUri
+      // Forza Azure Automation a recuperare nuovamente il contenuto anche se l'URI raw non cambia.
+      version: deployment().name
     }
   }
 }
@@ -263,7 +265,8 @@ resource schedule 'Microsoft.Automation/automationAccounts/schedules@2023-11-01'
 //   Register-AzAutomationScheduledRunbook -RunbookName <rb> -ScheduleName <sch> -Parameters @{...}
 resource jobSchedule 'Microsoft.Automation/automationAccounts/jobSchedules@2023-11-01' = if (enableSchedule) {
   parent: automationAccount
-  name: guid(automationAccount.id, runbookName, scheduleName)
+  // Un ID nuovo evita i conflitti con la tombstone del collegamento appena eliminato.
+  name: guid(automationAccount.id, runbookName, scheduleName, deployment().name)
   properties: {
     runbook: {
       name: runbookName

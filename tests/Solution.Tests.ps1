@@ -161,9 +161,11 @@ Describe 'Orchestrazione del deployment' {
     It 'Riusa i parametri runtime per avvio immediato e webhook' {
         $script:deployText | Should -Match 'Outputs\.runbookParameters'
         $script:deployText | Should -Match 'ConvertTo-StringHashtable'
+        $script:deployText | Should -Match 'ConvertTo-DirectRunbookHashtable'
         $script:deployText | Should -Match 'Newtonsoft\.Json\.Linq\.JObject'
-        $script:deployText | Should -Match 'New-AzAutomationWebhook[\s\S]*-Parameters \$runbookParameters'
-        $script:deployText | Should -Match 'Start-AzAutomationRunbook[\s\S]*-Parameters \$runbookParameters'
+        $script:deployText | Should -Match "KeyMissingAlertThreshold'\] = \[int\]"
+        $script:deployText | Should -Match 'New-AzAutomationWebhook[\s\S]*-Parameters \$directRunbookParameters'
+        $script:deployText | Should -Match 'Start-AzAutomationRunbook[\s\S]*-Parameters \$directRunbookParameters'
     }
     It 'Installa Azure CLI, Bicep e i moduli PowerShell richiesti' {
         $script:deployText | Should -Match 'winget install --id Microsoft\.AzureCLI'
@@ -174,6 +176,9 @@ Describe 'Orchestrazione del deployment' {
         $script:deployText | Should -Match 'Install-RequiredModule -Name Az\.Accounts'
         $script:deployText | Should -Match 'Install-RequiredModule -Name Az\.Resources'
         $script:deployText | Should -Match 'Install-RequiredModule -Name Az\.Automation'
+    }
+    It 'Rende Bicep disponibile anche quando il bootstrap viene saltato' {
+        $script:deployText | Should -Match 'if \(-not \$SkipBootstrap\) \{ Initialize-DeploymentTooling \}\s+Add-BicepToProcessPath'
     }
     It 'Usa device code per il login Azure' {
         $script:deployText | Should -Match 'UseDeviceAuthentication'
@@ -217,6 +222,8 @@ Describe 'Orchestrazione del deployment' {
         $script:deployText | Should -Match 'Remove-ExistingJobScheduleLink'
         $script:deployText | Should -Match 'Unregister-AzAutomationScheduledRunbook'
         $script:deployText | Should -Match '\$_.ScheduleName -eq \$ScheduleName'
+        $script:deployText | Should -Match 'Get-AzResource -ResourceId \$jobScheduleResourceId'
+        $script:deployText | Should -Match 'Timeout durante la rimozione del jobSchedule'
     }
     It 'Riusa certificato e secret esistenti nelle fasi successive' {
         $script:deployText | Should -Match 'Get-AzAutomationCertificate'

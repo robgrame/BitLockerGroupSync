@@ -58,8 +58,9 @@ singolarmente tramite gli appositi flag.
 | `…-KeyEscrowed` | Device con recovery key salvata in Entra | Prova di escrow / audit | ⚪ Opzionale (`EnableKeyEscrowedGroup`) |
 | `…-KeyMissing` | Device **cifrati** ma **senza** recovery key | ⚠️ Rischio: nessun recupero possibile | ⚪ Opzionale (`EnableKeyMissingGroup`) |
 
-> Il prefisso (`SG-Intune-BitLocker` di default) è parametrico. In alternativa è possibile
-> definire il **nome completo** di ciascun gruppo con i parametri `EncryptedGroupName`,
+> Il prefisso è opzionale. La configurazione predefinita usa il nome completo
+> `Intune - BitLocker Encrypted`; in alternativa è possibile definire ciascun gruppo
+> con i parametri `EncryptedGroupName`,
 > `NotEncryptedGroupName`, `KeyEscrowedGroupName`, `KeyMissingGroupName` (se vuoti, il nome
 > viene derivato dal prefisso).
 
@@ -183,15 +184,15 @@ pwsh ./scripts/Grant-GraphPermissions.ps1 -ManagedIdentityPrincipalId <principal
 | `location` | `westeurope` | Region delle risorse |
 | `automationAccountName` | `aa-bitlocker-groupsync` | Nome Automation Account |
 | `runbookContentUri` | *(raw GitHub URL)* | Sorgente del runbook `.ps1` |
-| `groupPrefix` | `SG-Intune-BitLocker` | Prefisso naming gruppi |
-| `encryptedGroupName` | *(vuoto → `<prefix>-Encrypted`)* | Nome esplicito gruppo Encrypted |
+| `groupPrefix` | *(vuoto)* | Prefisso opzionale per il naming dei gruppi |
+| `encryptedGroupName` | `Intune - BitLocker Encrypted` | Nome esplicito gruppo Encrypted |
 | `notEncryptedGroupName` | *(vuoto → `<prefix>-NotEncrypted`)* | Nome esplicito gruppo NotEncrypted |
 | `keyEscrowedGroupName` | *(vuoto → `<prefix>-KeyEscrowed`)* | Nome esplicito gruppo KeyEscrowed |
 | `keyMissingGroupName` | *(vuoto → `<prefix>-KeyMissing`)* | Nome esplicito gruppo KeyMissing |
 | `enableNotEncryptedGroup` | `false` | Abilita il gruppo NotEncrypted (opzionale) |
 | `enableKeyEscrowedGroup` | `false` | Abilita il gruppo KeyEscrowed (opzionale) |
 | `enableKeyMissingGroup` | `false` | Abilita il gruppo KeyMissing (opzionale) |
-| `enableKeyEscrowCheck` | `true` | Master switch verifica escrow: `false` salta il recupero chiavi e disabilita KeyEscrowed/KeyMissing/alert |
+| `enableKeyEscrowCheck` | `false` | Master switch verifica escrow: `false` salta il recupero chiavi e disabilita KeyEscrowed/KeyMissing/alert |
 | `targetOperatingSystem` | `Windows` | Filtro OS device |
 | `scheduleIntervalHours` | `6` | Cadenza esecuzione |
 | `deployLogAnalytics` | `true` | Crea LA + diagnostica |
@@ -202,8 +203,8 @@ pwsh ./scripts/Grant-GraphPermissions.ps1 -ManagedIdentityPrincipalId <principal
 
 | Parametro | Default | Descrizione |
 |---|---|---|
-| `GroupPrefix` | `SG-Intune-BitLocker` | Prefisso dei gruppi |
-| `EncryptedGroupName` | *(vuoto → `<prefix>-Encrypted`)* | Nome esplicito gruppo Encrypted |
+| `GroupPrefix` | *(vuoto)* | Prefisso opzionale dei gruppi |
+| `EncryptedGroupName` | `Intune - BitLocker Encrypted` | Nome esplicito gruppo Encrypted |
 | `NotEncryptedGroupName` | *(vuoto → `<prefix>-NotEncrypted`)* | Nome esplicito gruppo NotEncrypted |
 | `KeyEscrowedGroupName` | *(vuoto → `<prefix>-KeyEscrowed`)* | Nome esplicito gruppo KeyEscrowed |
 | `KeyMissingGroupName` | *(vuoto → `<prefix>-KeyMissing`)* | Nome esplicito gruppo KeyMissing |

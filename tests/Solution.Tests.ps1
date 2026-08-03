@@ -139,8 +139,14 @@ Describe 'Logica di batching' {
     It 'Filtra i device stale/retired' {
         $script:runbookText | Should -Match 'retirePending'
     }
-    It 'Registra il dettaglio strutturato delle aggiunte riuscite' {
+    It 'Registra il dettaglio strutturato delle modifiche membership riuscite' {
         $script:runbookText | Should -Match '\[MEMBERSHIP_ADD\]'
+        $script:runbookText | Should -Match '\[MEMBERSHIP_REMOVE\]'
+        $script:runbookText | Should -Match '\[MEMBERSHIP_CYCLE\]'
+        $script:runbookText | Should -Match "operation = 'Add'"
+        $script:runbookText | Should -Match "operation = 'Remove'"
+        $script:runbookText | Should -Match 'MembershipAdds'
+        $script:runbookText | Should -Match 'MembershipRemoves'
         $script:runbookText | Should -Match 'deviceName'
         $script:runbookText | Should -Match 'LogMembershipDetails'
     }
@@ -224,6 +230,9 @@ Describe 'Orchestrazione del deployment' {
         $script:deployText | Should -Match '\$_.ScheduleName -eq \$ScheduleName'
         $script:deployText | Should -Match 'Get-AzResource -ResourceId \$jobScheduleResourceId'
         $script:deployText | Should -Match 'Timeout durante la rimozione del jobSchedule'
+    }
+    It 'Usa una frequenza oraria anche come fallback del deploy' {
+        $script:deployText | Should -Match '\$configuredScheduleIntervalHours[\s\S]*else \{\s*1\s*\}'
     }
     It 'Riusa certificato e secret esistenti nelle fasi successive' {
         $script:deployText | Should -Match 'Get-AzAutomationCertificate'

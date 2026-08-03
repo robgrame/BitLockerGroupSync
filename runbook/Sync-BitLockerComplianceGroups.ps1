@@ -144,6 +144,8 @@ $VerbosePreference = 'Continue'
 
 $script:GraphBase = 'https://graph.microsoft.com/v1.0'
 $script:ReconcileErrors = 0
+$script:MembershipAdds = 0
+$script:MembershipRemoves = 0
 
 #region Helper
 
@@ -294,6 +296,7 @@ function Invoke-GraphBatch {
     param([Parameter(Mandatory)][object[]]$Requests)
 
     if ($Requests.Count -eq 0) { return }
+    $successfulRequests = [System.Collections.Generic.List[object]]::new()
     $chunks = for ($i = 0; $i -lt $Requests.Count; $i += 20) { , ($Requests[$i..([math]::Min($i + 19, $Requests.Count - 1))]) }
 
     foreach ($chunk in $chunks) {
@@ -317,7 +320,10 @@ function Invoke-GraphBatch {
 
             $retry = @{}
             foreach ($res in $resp.Value[0].responses) {
-                if ($res.status -lt 400 -or $res.status -eq 404) { continue }  # 404 su DELETE = gia' assente
+                if ($res.status -lt 400 -or $res.status -eq 404) {
+                    $successfulRequests.Add($pending["$($res.id)"])
+                    continue # 404 su DELETE = gia' assente
+                }
                 $isTransient = ($res.status -eq 429 -or $res.status -ge 500 -or $res.status -eq 400)
                 if ($isTransient -and $attempt -lt 4) {
                     $retry["$($res.id)"] = $pending["$($res.id)"]
@@ -334,6 +340,7 @@ function Invoke-GraphBatch {
             Start-Sleep -Seconds ([math]::Min(30, [math]::Pow(2, $attempt)))
         }
     }
+    return $successfulRequests.ToArray()
 }
 
 # Restituisce l'id del gruppo, creandolo se assente. mailNickname derivato dal displayName.
@@ -409,10 +416,12 @@ function Sync-GroupMembership {
             try {
                 Invoke-GraphApi -Uri "groups/$GroupId" -Method PATCH -Body $body | Out-Null
                 $done = $true
+                $script:MembershipAdds += $slice.Count
                 if ($LogMembershipDetails) {
                     foreach ($id in $slice) {
                         $deviceName = if ($DeviceNamesByObjectId.ContainsKey($id)) { $DeviceNamesByObjectId[$id] } else { $id }
                         $eventData = [ordered]@{
+                            operation = 'Add'
                             groupName = $GroupName
                             deviceName = $deviceName
                             objectId = $id
@@ -436,8 +445,24 @@ function Sync-GroupMembership {
 
     # REMOVE: JSON $batch di DELETE members/{id}/$ref.
     if ($toRemove.Count -gt 0) {
-        $reqs = foreach ($id in $toRemove) { @{ method = 'DELETE'; url = "/groups/$GroupId/members/$id/`$ref" } }
-        Invoke-GraphBatch -Requests @($reqs)
+        $reqs = foreach ($id in $toRemove) {
+            @{ method = 'DELETE'; url = "/groups/$GroupId/members/$id/`$ref"; objectId = $id }
+        }
+        $removed = @(Invoke-GraphBatch -Requests @($reqs))
+        $script:MembershipRemoves += $removed.Count
+        if ($LogMembershipDetails) {
+            foreach ($request in $removed) {
+                $id = [string]$request.objectId
+                $deviceName = if ($DeviceNamesByObjectId.ContainsKey($id)) { $DeviceNamesByObjectId[$id] } else { $id }
+                $eventData = [ordered]@{
+                    operation = 'Remove'
+                    groupName = $GroupName
+                    deviceName = $deviceName
+                    objectId = $id
+                } | ConvertTo-Json -Compress
+                Write-Log "[MEMBERSHIP_REMOVE] $eventData" 'OK'
+            }
+        }
     }
 }
 
@@ -607,6 +632,12 @@ try {
     if ($useKeyMissing) {
         Sync-GroupMembership -GroupId $groupIds.KeyMissing -GroupName $KeyMissingGroupName -DesiredObjectIds $desired.KeyMissing.ToArray() -DeviceNamesByObjectId $deviceNamesByObjectId -LogMembershipDetails $logMembershipDetails
     }
+
+    $cycleEvent = [ordered]@{
+        added = $script:MembershipAdds
+        removed = $script:MembershipRemoves
+    } | ConvertTo-Json -Compress
+    Write-Log "[MEMBERSHIP_CYCLE] $cycleEvent" 'OK'
 
     $summary['DeviceValutati'] = $deviceMap.Count
     $summary['Encrypted'] = $desired.Encrypted.Count

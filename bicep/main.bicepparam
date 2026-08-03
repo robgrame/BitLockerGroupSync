@@ -34,15 +34,15 @@ param targetOperatingSystem = 'Windows'
 
 // Autenticazione Graph:
 // ManagedIdentity | AppRegistrationCertificate | AppRegistrationSecret
-param authenticationMode = 'ManagedIdentity'
+param authenticationMode = 'AppRegistrationCertificate'
 param managedIdentityName = 'id-blk-groupsync'
-param appTenantId = ''
-param appClientId = ''
+param appTenantId = '46b06a5e-8f7a-467b-bc9a-e776011fbb57'
+param appClientId = 'f9d6d647-2555-400a-8c27-fbbc7bd3ffcd'
 param certificateAssetName = 'GraphAuthCertificate'
 param graphCredentialVariableName = 'GraphClientSecret'
 param appClientSecret = ''
 
-param scheduleIntervalHours = 6
+param scheduleIntervalHours = 1
 param deployLogAnalytics = true
 
 // Monitoraggio nativo Azure (Action Group + alert rules + workbook).

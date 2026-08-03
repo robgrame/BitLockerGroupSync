@@ -435,7 +435,7 @@ $configuredScheduleIntervalHours = if ($parameterValues.scheduleIntervalHours) {
     [int]$parameterValues.scheduleIntervalHours.value
 }
 else {
-    6
+    1
 }
 $configuredScheduleName = "$configuredRunbookName-every$($configuredScheduleIntervalHours)h"
 

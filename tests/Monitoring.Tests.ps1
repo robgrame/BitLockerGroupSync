@@ -39,6 +39,10 @@ Describe 'Default cliente dei parametri Bicep' {
         $script:parameterText | Should -Match "param encryptedGroupName = 'Intune - BitLocker Encrypted'"
     }
 
+    It 'Pianifica il runbook ogni ora' {
+        $script:parameterText | Should -Match 'param scheduleIntervalHours = 1'
+    }
+
     It 'Usa nomi di asset e tag senza branding Nimbus' {
         $parameterWithoutSourceUri = $script:parameterText -replace "(?m)^param runbookContentUri = .*\r?\n", ''
         $parameterWithoutSourceUri | Should -Not -Match 'Nimbus'
@@ -213,9 +217,19 @@ Describe 'Workbook JSON' {
         $script:raw | Should -Match 'RunbookName_s'
         $script:raw | Should -Match '__RUNBOOK_NAME__'
     }
-    It 'Contiene la vista dei device aggiunti ai gruppi' {
+    It 'Contiene il trend a linee di aggiunte e rimozioni per ciclo' {
         $script:raw | Should -Match '\[MEMBERSHIP_ADD\]'
-        $script:raw | Should -Match 'membership-add-details'
+        $script:raw | Should -Match '\[MEMBERSHIP_REMOVE\]'
+        $script:raw | Should -Match '\[MEMBERSHIP_CYCLE\]'
+        $script:raw | Should -Match 'render timechart'
+        $script:raw | Should -Match 'Aggiunte = toint\(Payload\.added\)'
+        $script:raw | Should -Match 'Rimozioni = toint\(Payload\.removed\)'
+    }
+    It 'Contiene la tabella delle operazioni per device' {
+        $script:raw | Should -Match 'membership-change-details'
         $script:raw | Should -Match 'Payload\.deviceName'
+        $script:raw | Should -Match 'Operazione'
+        $script:raw | Should -Match 'Aggiunta'
+        $script:raw | Should -Match 'Rimozione'
     }
 }

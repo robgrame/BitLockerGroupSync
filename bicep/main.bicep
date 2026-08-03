@@ -81,7 +81,7 @@ param appClientSecret string = ''
 @description('Intervallo (in ore) tra le esecuzioni schedulate.')
 @minValue(1)
 @maxValue(24)
-param scheduleIntervalHours int = 6
+param scheduleIntervalHours int = 1
 
 @description('Data/ora di primo avvio della schedule (UTC, ISO 8601). Default: +15 minuti.')
 param scheduleStartTime string = dateTimeAdd(utcNow(), 'PT15M')

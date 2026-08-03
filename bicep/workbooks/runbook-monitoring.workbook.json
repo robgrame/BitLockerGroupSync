@@ -37,9 +37,9 @@
       "type": 3,
       "content": {
         "version": "KqlItem/1.0",
-        "query": "AzureDiagnostics\n| where ResourceProvider == \"MICROSOFT.AUTOMATION\" and Category == \"JobLogs\"\n| where RunbookName_s == \"__RUNBOOK_NAME__\"\n| where ResultType in (\"Completed\",\"Failed\",\"Suspended\",\"Stopped\")\n| summarize Jobs = count() by ResultType, bin(TimeGenerated, 1h)\n| render columnchart",
+        "query": "AzureDiagnostics\n| where ResourceProvider == \"MICROSOFT.AUTOMATION\" and Category == \"JobStreams\"\n| where RunbookName_s == \"__RUNBOOK_NAME__\"\n| where ResultDescription contains \"[MEMBERSHIP_CYCLE]\"\n| extend Payload = parse_json(extract(@\"(\\{.*\\})\", 1, ResultDescription))\n| project OraCiclo = TimeGenerated, Aggiunte = toint(Payload.added), Rimozioni = toint(Payload.removed), JobId = JobId_g\n| order by OraCiclo asc\n| render timechart",
         "size": 0,
-        "title": "📈 Esito job nel tempo",
+        "title": "📈 Aggiunte e rimozioni per ciclo",
         "timeContextFromParameter": "TimeRange",
         "queryType": 0,
         "resourceType": "microsoft.operationalinsights/workspaces"
@@ -89,14 +89,14 @@
       "type": 3,
       "content": {
         "version": "KqlItem/1.0",
-        "query": "AzureDiagnostics\n| where ResourceProvider == \"MICROSOFT.AUTOMATION\" and Category == \"JobStreams\"\n| where RunbookName_s == \"__RUNBOOK_NAME__\"\n| where ResultDescription contains \"[MEMBERSHIP_ADD]\"\n| extend Payload = parse_json(extract(@\"(\\{.*\\})\", 1, ResultDescription))\n| extend Gruppo = tostring(Payload.groupName), Device = tostring(Payload.deviceName), ObjectId = tostring(Payload.objectId)\n| where isnotempty(Device)\n| project TimeGenerated, Gruppo, Device, ObjectId, JobId = JobId_g\n| order by TimeGenerated desc\n| take 500",
+        "query": "AzureDiagnostics\n| where ResourceProvider == \"MICROSOFT.AUTOMATION\" and Category == \"JobStreams\"\n| where RunbookName_s == \"__RUNBOOK_NAME__\"\n| where ResultDescription contains \"[MEMBERSHIP_ADD]\" or ResultDescription contains \"[MEMBERSHIP_REMOVE]\"\n| extend Payload = parse_json(extract(@\"(\\{.*\\})\", 1, ResultDescription))\n| extend Operazione = case(tostring(Payload.operation) == \"Add\", \"Aggiunta\", tostring(Payload.operation) == \"Remove\", \"Rimozione\", tostring(Payload.operation)), Gruppo = tostring(Payload.groupName), Device = tostring(Payload.deviceName), ObjectId = tostring(Payload.objectId)\n| where isnotempty(Device)\n| project TimeGenerated, Operazione, Gruppo, Device, ObjectId, JobId = JobId_g\n| order by TimeGenerated desc\n| take 500",
         "size": 0,
-        "title": "➕ Device aggiunti ai gruppi",
+        "title": "🔄 Device aggiunti e rimossi dai gruppi",
         "timeContextFromParameter": "TimeRange",
         "queryType": 0,
         "resourceType": "microsoft.operationalinsights/workspaces"
       },
-      "name": "membership-add-details"
+      "name": "membership-change-details"
     }
   ],
   "fallbackResourceIds": [],

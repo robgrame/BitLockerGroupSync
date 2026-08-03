@@ -81,7 +81,7 @@ singolarmente tramite gli appositi flag.
 ```mermaid
 flowchart LR
     subgraph AZ["☁️ Azure"]
-        SCH["⏰ Schedule (ogni 6h)"] --> RB["📜 Runbook PS 7.2"]
+        SCH["⏰ Schedule (ogni ora)"] --> RB["📜 Runbook PS 7.2"]
         MI(["🪪 Managed Identity"]) -.app-only.-> RB
         RB --> LAW["📊 Log Analytics"]
     end
@@ -194,7 +194,7 @@ pwsh ./scripts/Grant-GraphPermissions.ps1 -ManagedIdentityPrincipalId <principal
 | `enableKeyMissingGroup` | `false` | Abilita il gruppo KeyMissing (opzionale) |
 | `enableKeyEscrowCheck` | `false` | Master switch verifica escrow: `false` salta il recupero chiavi e disabilita KeyEscrowed/KeyMissing/alert |
 | `targetOperatingSystem` | `Windows` | Filtro OS device |
-| `scheduleIntervalHours` | `6` | Cadenza esecuzione |
+| `scheduleIntervalHours` | `1` | Cadenza oraria dell'esecuzione |
 | `deployLogAnalytics` | `true` | Crea LA + diagnostica |
 
 ---

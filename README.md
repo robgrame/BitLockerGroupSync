@@ -31,8 +31,13 @@ proprietà dei device gestiti da **Microsoft Intune** che i gruppi dinamici nati
 - 💽 **`isEncrypted`** — il disco del device è cifrato con BitLocker.
 - 🔑 **BitLocker recovery key** — esiste almeno una recovery key salvata (escrow) su Entra ID.
 
-L'autenticazione a Microsoft Graph avviene **esclusivamente tramite la managed identity**
-dell'Automation Account (app-only, **zero segreti**).
+L'autenticazione a Microsoft Graph è configurabile:
+
+- **UAMI dedicata**, creata dal deployment e collegata all'Automation Account;
+- **App Registration con certificato** conservato come Automation Certificate;
+- **App Registration con client secret** conservato come Automation Variable cifrata.
+
+Managed Identity e certificato sono le modalità raccomandate.
 
 > [!NOTE]
 > I gruppi dinamici di Entra ID non sanno leggere lo stato di cifratura Intune né la
@@ -120,6 +125,10 @@ Assegnati alla managed identity dallo script [`Grant-GraphPermissions.ps1`](scri
 
 ## 🚀 Deployment
 
+Per la procedura completa destinata al cliente, inclusi ruoli, prerequisiti,
+separazione Azure/Entra, verifiche, rollback e handover, vedere
+[`docs/DEPLOYMENT-GUIDE.md`](docs/DEPLOYMENT-GUIDE.md).
+
 ### Prerequisiti
 
 - 🧰 Azure CLI (`az`) **oppure** Azure PowerShell (`Az`)
@@ -129,10 +138,28 @@ Assegnati alla managed identity dallo script [`Grant-GraphPermissions.ps1`](scri
 ### ⚡ One-command deploy
 
 ```powershell
-.\deploy.ps1 -ResourceGroupName 'rg-bitlocker' -Location 'westeurope' -StartJobNow
+.\deploy.ps1 `
+  -ResourceGroupName 'rg-bitlocker' `
+  -Location 'westeurope' `
+  -TenantId '<tenant-id>' `
+  -SubscriptionId '<subscription-id>'
 ```
 
-Lo script: crea il resource group → deploya il Bicep → assegna i permessi Graph → (opz.) avvia un job.
+Lo script installa Azure CLI, Bicep e moduli mancanti, crea il resource group e
+distribuisce il Bicep senza attivare la schedule. Le comunicazioni EML per
+l'amministratore Entra sono documenti separati nella cartella `templates`. Dopo
+la conferma delle permission:
+
+```powershell
+.\deploy.ps1 `
+  -ResourceGroupName 'rg-bitlocker' `
+  -Location 'westeurope' `
+  -TenantId '<tenant-id>' `
+  -SubscriptionId '<subscription-id>' `
+  -SkipBootstrap `
+  -PermissionsConfirmed `
+  -StartJobNow
+```
 
 ### 🧱 Deploy manuale (Azure CLI)
 
@@ -186,10 +213,11 @@ pwsh ./scripts/Grant-GraphPermissions.ps1 -ManagedIdentityPrincipalId <principal
 | `EnableKeyEscrowCheck` | `true` | Master switch verifica escrow: `false` salta il recupero chiavi e disabilita KeyEscrowed/KeyMissing/alert soglia |
 | `TargetOperatingSystem` | `Windows` | OS dei device valutati |
 | `WhatIfOnly` | `$false` | Simulazione senza modifiche |
-| `UserAssignedClientId` | *(vuoto)* | Client id di una UAMI (opz.) |
+| `ManagedIdentityClientId` | *(fornito dal deployment)* | Client ID della UAMI dedicata |
 | `KeyMissingAlertThreshold` | `0` | Soglia device cifrati senza key oltre cui inviare alert (0 = off) |
 | `AlertWebhookUrl` | *(vuoto)* | Webhook per l'alert soglia (fallback: variable `BitLockerSyncAlertWebhook`) |
 | `NotifyWebhookUrl` | *(vuoto)* | Webhook di notifica a ogni run (fallback: variable `BitLockerSyncNotifyWebhook`) |
+| `EnableMembershipDetailLogging` | `true` | Registra nome e object ID di ogni device aggiunto con successo, per la vista di dettaglio del workbook |
 
 ---
 
@@ -265,7 +293,12 @@ flowchart LR
 - **Action Group** `ag-bitlocker-sync`: invia gli alert a una o più **email** (`alertEmails`)
   e, se abilitata la Logic App Teams (o valorizzato `alertActionWebhookUrl`), a un **webhook**.
 - **Workbook** *Nimbus.BitLockerGroupSync - Monitoring*: dashboard con trend degli esiti job,
-  ultimi job, errori recenti e righe di riepilogo.
+  ultimi job, errori recenti, righe di riepilogo e dettaglio dei device aggiunti ai gruppi.
+
+La vista **Device aggiunti ai gruppi** mostra data/ora, gruppo, nome device, object ID e job.
+I dati sono generati solo per aggiunte effettivamente riuscite e rispettano il filtro temporale
+del workbook. `enableMembershipDetailLogging=false` disabilita questa telemetria dettagliata
+quando si vuole ridurre il volume dei JobStreams.
 
 ### 💬 Notifiche Teams (Logic App)
 

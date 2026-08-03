@@ -1,6 +1,6 @@
 // =============================================================================
 //  Nimbus.BitLockerGroupSync - main.bicep
-//  Deploya un Azure Automation Account (system-assigned MI), il modulo Graph,
+//  Deploya un Azure Automation Account con UAMI dedicata, il modulo Graph,
 //  il runbook, una schedule ricorrente e (opzionale) Log Analytics.
 // =============================================================================
 
@@ -11,6 +11,9 @@ param location string = resourceGroup().location
 
 @description('Nome dell\'Automation Account.')
 param automationAccountName string = 'aa-bitlocker-groupsync'
+
+@description('Nome del workspace Log Analytics. Separato dall\'Automation Account per consentire rename controllati.')
+param logAnalyticsWorkspaceName string = '${automationAccountName}-law'
 
 @description('Nome del runbook.')
 param runbookName string = 'Sync-BitLockerComplianceGroups'
@@ -48,6 +51,33 @@ param enableKeyEscrowCheck bool = true
 @description('Sistema operativo target dei device Intune.')
 param targetOperatingSystem string = 'Windows'
 
+@description('Autenticazione Microsoft Graph del runbook.')
+@allowed([
+  'ManagedIdentity'
+  'AppRegistrationCertificate'
+  'AppRegistrationSecret'
+])
+param authenticationMode string = 'ManagedIdentity'
+
+@description('Nome della UAMI dedicata creata e collegata all\'Automation Account in modalita ManagedIdentity.')
+param managedIdentityName string = '${automationAccountName}-identity'
+
+@description('Tenant id dell\'App Registration.')
+param appTenantId string = ''
+
+@description('Application (client) id dell\'App Registration.')
+param appClientId string = ''
+
+@description('Nome dell\'Automation Certificate usato per AppRegistrationCertificate.')
+param certificateAssetName string = 'NimbusGraphAuth'
+
+@description('Nome dell\'Automation Variable cifrata usata per AppRegistrationSecret.')
+param graphCredentialVariableName string = 'NimbusGraphClientSecret'
+
+@description('Client secret dell\'App Registration. Usato solo per creare la Automation Variable cifrata.')
+@secure()
+param appClientSecret string = ''
+
 @description('Intervallo (in ore) tra le esecuzioni schedulate.')
 @minValue(1)
 @maxValue(24)
@@ -55,6 +85,9 @@ param scheduleIntervalHours int = 6
 
 @description('Data/ora di primo avvio della schedule (UTC, ISO 8601). Default: +15 minuti.')
 param scheduleStartTime string = dateTimeAdd(utcNow(), 'PT15M')
+
+@description('Se true crea e collega la schedule. Il deploy assistito la abilita solo dopo la conferma delle permission Entra.')
+param enableSchedule bool = true
 
 @description('Se true crea un workspace Log Analytics e collega la diagnostica.')
 param deployLogAnalytics bool = true
@@ -66,6 +99,7 @@ param deployMonitoring bool = true
 param alertEmails array = []
 
 @description('URL webhook (Teams/Logic App) a cui inoltrare gli alert. Vuoto = disabilitato.')
+@secure()
 param alertActionWebhookUrl string = ''
 
 @description('Abilita l\'alert sui job Failed/Suspended/Stopped.')
@@ -100,11 +134,15 @@ param deployTeamsLogicApp bool = false
 param teamsLogicAppName string = 'logic-bitlocker-teams'
 
 @description('URL del canale Teams (Workflows / Power Automate). Vuoto = la Logic App non invia (impostabile in seguito).')
+@secure()
 param teamsWebhookUrl string = ''
 
 @description('Soglia di device cifrati senza recovery key oltre la quale inviare alert. 0 = disabilitato.')
 @minValue(0)
 param keyMissingAlertThreshold int = 0
+
+@description('Se true registra nei JobStreams il dettaglio dei device aggiunti ai gruppi, usato dal workbook.')
+param enableMembershipDetailLogging bool = true
 
 @description('URL webhook per gli alert soglia (Teams/Logic App). Se valorizzato viene salvato come Automation variable cifrata.')
 @secure()
@@ -131,13 +169,44 @@ param tags object = {
 
 var graphAuthModuleUri = 'https://www.powershellgallery.com/api/v2/package/Microsoft.Graph.Authentication'
 var scheduleName = '${runbookName}-every${scheduleIntervalHours}h'
+var runbookParameters = {
+  AuthenticationMode: authenticationMode
+  ManagedIdentityClientId: authenticationMode == 'ManagedIdentity' ? runtimeIdentity!.properties.clientId : ''
+  AppTenantId: appTenantId
+  AppClientId: appClientId
+  CertificateAssetName: certificateAssetName
+  ClientSecretVariableName: graphCredentialVariableName
+  GroupPrefix: groupPrefix
+  EncryptedGroupName: encryptedGroupName
+  NotEncryptedGroupName: notEncryptedGroupName
+  KeyEscrowedGroupName: keyEscrowedGroupName
+  KeyMissingGroupName: keyMissingGroupName
+  EnableNotEncryptedGroup: string(enableNotEncryptedGroup)
+  EnableKeyEscrowedGroup: string(enableKeyEscrowedGroup)
+  EnableKeyMissingGroup: string(enableKeyMissingGroup)
+  EnableKeyEscrowCheck: string(enableKeyEscrowCheck)
+  TargetOperatingSystem: targetOperatingSystem
+  KeyMissingAlertThreshold: string(keyMissingAlertThreshold)
+  EnableMembershipDetailLogging: string(enableMembershipDetailLogging)
+}
+
+resource runtimeIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2024-11-30' = if (authenticationMode == 'ManagedIdentity') {
+  name: managedIdentityName
+  location: location
+  tags: tags
+}
 
 resource automationAccount 'Microsoft.Automation/automationAccounts@2023-11-01' = {
   name: automationAccountName
   location: location
   tags: tags
-  identity: {
-    type: 'SystemAssigned'
+  identity: authenticationMode == 'ManagedIdentity' ? {
+    type: 'UserAssigned'
+    userAssignedIdentities: {
+      '${runtimeIdentity!.id}': {}
+    }
+  } : {
+    type: 'None'
   }
   properties: {
     sku: {
@@ -173,7 +242,7 @@ resource runbook 'Microsoft.Automation/automationAccounts/runbooks@2023-11-01' =
   }
 }
 
-resource schedule 'Microsoft.Automation/automationAccounts/schedules@2023-11-01' = {
+resource schedule 'Microsoft.Automation/automationAccounts/schedules@2023-11-01' = if (enableSchedule) {
   parent: automationAccount
   name: scheduleName
   properties: {
@@ -192,7 +261,7 @@ resource schedule 'Microsoft.Automation/automationAccounts/schedules@2023-11-01'
 // (es. abilitare i gruppi opzionali) bisogna rimuovere e ricreare il jobSchedule, es.:
 //   Unregister-AzAutomationScheduledRunbook -JobScheduleId <id> -Force
 //   Register-AzAutomationScheduledRunbook -RunbookName <rb> -ScheduleName <sch> -Parameters @{...}
-resource jobSchedule 'Microsoft.Automation/automationAccounts/jobSchedules@2023-11-01' = {
+resource jobSchedule 'Microsoft.Automation/automationAccounts/jobSchedules@2023-11-01' = if (enableSchedule) {
   parent: automationAccount
   name: guid(automationAccount.id, runbookName, scheduleName)
   properties: {
@@ -202,19 +271,7 @@ resource jobSchedule 'Microsoft.Automation/automationAccounts/jobSchedules@2023-
     schedule: {
       name: scheduleName
     }
-    parameters: {
-      GroupPrefix: groupPrefix
-      EncryptedGroupName: encryptedGroupName
-      NotEncryptedGroupName: notEncryptedGroupName
-      KeyEscrowedGroupName: keyEscrowedGroupName
-      KeyMissingGroupName: keyMissingGroupName
-      EnableNotEncryptedGroup: string(enableNotEncryptedGroup)
-      EnableKeyEscrowedGroup: string(enableKeyEscrowedGroup)
-      EnableKeyMissingGroup: string(enableKeyMissingGroup)
-      EnableKeyEscrowCheck: string(enableKeyEscrowCheck)
-      TargetOperatingSystem: targetOperatingSystem
-      KeyMissingAlertThreshold: string(keyMissingAlertThreshold)
-    }
+    parameters: runbookParameters
   }
   dependsOn: [
     runbook
@@ -241,8 +298,17 @@ resource notifyWebhookVar 'Microsoft.Automation/automationAccounts/variables@202
   }
 }
 
+resource graphClientSecretVar 'Microsoft.Automation/automationAccounts/variables@2023-11-01' = if (authenticationMode == 'AppRegistrationSecret' && !empty(appClientSecret)) {
+  parent: automationAccount
+  name: graphCredentialVariableName
+  properties: {
+    isEncrypted: true
+    value: '"${appClientSecret}"'
+  }
+}
+
 resource logAnalytics 'Microsoft.OperationalInsights/workspaces@2023-09-01' = if (deployLogAnalytics) {
-  name: '${automationAccountName}-law'
+  name: logAnalyticsWorkspaceName
   location: location
   tags: tags
   properties: {
@@ -272,11 +338,11 @@ resource diagnostics 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' 
 }
 
 // Assegnazione automatica (opt-in) dei permessi Graph alla MI tramite deploymentScript.
-module graphPermissions 'graphPermissions.bicep' = if (assignGraphPermissions) {
+module graphPermissions 'graphPermissions.bicep' = if (assignGraphPermissions && authenticationMode == 'ManagedIdentity') {
   name: 'assign-graph-permissions'
   params: {
     location: location
-    managedIdentityPrincipalId: automationAccount.identity.principalId
+    managedIdentityPrincipalId: runtimeIdentity!.properties.principalId
     grantIdentityResourceId: permissionGrantIdentityId
     grantIdentityClientId: permissionGrantIdentityClientId
     tags: tags
@@ -295,15 +361,15 @@ module teamsLogicApp 'teams-logicapp.bicep' = if (deployMonitoring && deployTeam
   }
 }
 
-// Monitoraggio nativo: Action Group + alert rules + workbook (opt-in).
-module monitoring 'monitoring.bicep' = if (deployMonitoring && deployLogAnalytics) {
+// Monitoraggio nativo senza Logic App Teams.
+module monitoring 'monitoring.bicep' = if (deployMonitoring && deployLogAnalytics && !deployTeamsLogicApp) {
   name: 'blkgm-monitoring'
   params: {
     location: location
     logAnalyticsWorkspaceId: logAnalytics.id
     runbookName: runbookName
     alertEmails: alertEmails
-    alertActionWebhookUrl: (deployMonitoring && deployTeamsLogicApp) ? teamsLogicApp!.outputs.triggerUrl : alertActionWebhookUrl
+    alertActionWebhookUrl: alertActionWebhookUrl
     enableFailedAlert: enableFailedAlert
     enableErrorAlert: enableErrorAlert
     enableDeadmanAlert: enableDeadmanAlert
@@ -316,11 +382,46 @@ module monitoring 'monitoring.bicep' = if (deployMonitoring && deployLogAnalytic
   ]
 }
 
-@description('Principal Id della system-assigned managed identity: usarlo per assegnare i permessi Graph.')
-output managedIdentityPrincipalId string = automationAccount.identity.principalId
+// Monitoraggio nativo con callback protetto della Logic App Teams.
+module monitoringWithTeams 'monitoring.bicep' = if (deployMonitoring && deployLogAnalytics && deployTeamsLogicApp) {
+  name: 'blkgm-monitoring'
+  params: {
+    location: location
+    logAnalyticsWorkspaceId: logAnalytics.id
+    runbookName: runbookName
+    alertEmails: alertEmails
+    // Le condizioni dei due moduli sono allineate: la Logic App esiste sempre in questo ramo.
+    #disable-next-line BCP318
+    alertActionWebhookUrl: teamsLogicApp.outputs.triggerUrl
+    enableFailedAlert: enableFailedAlert
+    enableErrorAlert: enableErrorAlert
+    enableDeadmanAlert: enableDeadmanAlert
+    deadmanWindowHours: deadmanWindowHours
+    deployWorkbook: deployWorkbook
+    tags: tags
+  }
+  dependsOn: [
+    diagnostics
+  ]
+}
+
+@description('Principal Id della UAMI dedicata: usarlo per assegnare i permessi Graph. Vuoto per le modalita App Registration.')
+output managedIdentityPrincipalId string = authenticationMode == 'ManagedIdentity' ? runtimeIdentity!.properties.principalId : ''
+
+@description('Client Id della UAMI dedicata usato dal runbook. Vuoto per le modalita App Registration.')
+output managedIdentityClientId string = authenticationMode == 'ManagedIdentity' ? runtimeIdentity!.properties.clientId : ''
+
+@description('Resource Id della UAMI dedicata. Vuoto per le modalita App Registration.')
+output managedIdentityResourceId string = authenticationMode == 'ManagedIdentity' ? runtimeIdentity!.id : ''
 
 @description('Nome dell\'Automation Account creato.')
 output automationAccountName string = automationAccount.name
 
 @description('Nome del runbook creato.')
 output runbookName string = runbook.name
+
+@description('Nome della schedule creata.')
+output scheduleName string = scheduleName
+
+@description('Parametri runtime usati dalla schedule e dagli avvii orchestrati.')
+output runbookParameters object = runbookParameters

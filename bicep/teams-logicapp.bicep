@@ -15,6 +15,7 @@ param location string
 param name string = 'logic-bitlocker-teams'
 
 @description('URL del canale Teams (Workflows / Power Automate) a cui postare la card. Vuoto = POST disabilitato.')
+@secure()
 param teamsWebhookUrl string = ''
 
 @description('Tag applicati alla risorsa.')
@@ -155,6 +156,7 @@ resource workflow 'Microsoft.Logic/workflows@2019-05-01' = {
 
 @description('URL di callback del trigger HTTP: da usare come serviceUri del webhook dell\'Action Group.')
 #disable-next-line outputs-should-not-contain-secrets
+@secure()
 output triggerUrl string = listCallbackUrl('${workflow.id}/triggers/manual', '2019-05-01').value
 
 @description('Resource id della Logic App.')

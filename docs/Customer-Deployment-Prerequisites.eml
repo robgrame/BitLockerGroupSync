@@ -1,0 +1,234 @@
+From: "MODIFICARE MITTENTE" <sender@example.com>
+To: "MODIFICARE DESTINATARIO" <customer@example.com>
+Subject: Nimbus.BitLockerGroupSync - prerequisiti e ruoli richiesti per il deployment
+Date: Mon, 03 Aug 2026 16:15:53 +0200
+MIME-Version: 1.0
+X-Unsent: 1
+Content-Type: multipart/alternative; boundary="nimbus-deployment-prerequisites"
+
+--nimbus-deployment-prerequisites
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+Gentile Cliente,
+
+per pianificare il deployment della soluzione Nimbus.BitLockerGroupSync chiediamo
+di predisporre e confermare i requisiti riportati di seguito.
+
+1. AMBIENTE MICROSOFT
+- Tenant Microsoft Entra con device registrati.
+- Microsoft Intune attivo e device gestiti.
+- BitLocker abilitato e recovery key disponibili in Microsoft Entra, se devono
+  essere utilizzate le viste di verifica escrow.
+- Subscription Azure attiva.
+- Tenant ID, Subscription ID, regione Azure approvata e nome del Resource Group.
+
+2. RUOLI RICHIESTI
+- Operatore Azure: ruolo Contributor sulla subscription se il deployment deve
+  creare il nuovo Resource Group e registrare i Resource Provider.
+- In alternativa, Contributor sul Resource Group esistente, purché i Resource
+  Provider siano già registrati a livello subscription.
+- Amministratore Microsoft Entra: Privileged Role Administrator per approvare e
+  assegnare le application permission Microsoft Graph.
+- Global Administrator è tecnicamente idoneo, ma non è richiesto; raccomandiamo
+  Privileged Role Administrator secondo il principio di minimo privilegio.
+- Per le notifiche Teams opzionali: diritto di creare un workflow Power
+  Automate/Workflows nel Team e nel canale scelti.
+
+3. RESOURCE PROVIDER AZURE
+Devono essere registrati:
+- Microsoft.Automation
+- Microsoft.ManagedIdentity
+- Microsoft.OperationalInsights
+- Microsoft.Insights
+- Microsoft.Resources
+- Microsoft.Logic, solo se vengono abilitate le notifiche Teams
+
+Lo script di deployment può registrarli automaticamente se l'operatore dispone
+delle autorizzazioni necessarie sulla subscription.
+
+4. MODALITÀ DI AUTENTICAZIONE MICROSOFT GRAPH
+Indicare una delle seguenti opzioni:
+
+A. User Assigned Managed Identity dedicata - raccomandata
+- La UAMI viene creata automaticamente dal deployment e collegata
+  all'Automation Account.
+- Non richiede password, certificati o altri dati segreti.
+- Il cliente deve approvare il nome dell'identità e assegnare le permission Graph
+  al Principal/Object ID restituito dalla prima fase.
+
+B. App Registration con certificato
+- App Registration esistente.
+- Application/Client ID e Tenant ID.
+- Certificato pubblico caricato nell'App Registration.
+- PFX con private key e password consegnati esclusivamente tramite un canale
+  sicuro, mai via email.
+
+C. App Registration con client secret
+- App Registration esistente.
+- Application/Client ID e Tenant ID.
+- Client secret consegnato esclusivamente tramite un canale sicuro.
+- Processo di rotazione e scadenza concordato.
+
+5. APPLICATION PERMISSION MICROSOFT GRAPH
+La Managed Identity o l'App Registration scelta deve ricevere:
+- DeviceManagementManagedDevices.Read.All
+- BitlockerKey.Read.All
+- Device.ReadWrite.All
+- Group.Create
+- GroupMember.ReadWrite.All
+
+Per una Managed Identity, l'assegnazione viene eseguita tramite Microsoft Graph
+PowerShell da un Privileged Role Administrator e verificata nel portale Entra.
+Durante questa sola attività amministrativa vengono richiesti gli scope delegati
+Application.Read.All e AppRoleAssignment.ReadWrite.All.
+
+Per un'App Registration, le permission applicative possono essere aggiunte e
+approvate da Microsoft Entra admin center tramite Autorizzazioni API e Concedi
+consenso amministratore.
+
+6. POSTAZIONE E CONNETTIVITÀ
+- Windows 10/11 o Windows Server con Windows PowerShell.
+- Diritto di installare Azure CLI e componenti PowerShell.
+- Git, se la repository deve essere clonata.
+- Accesso HTTPS a management.azure.com, login.microsoftonline.com,
+  graph.microsoft.com, www.powershellgallery.com, aka.ms, endpoint WinGet e host
+  configurato per il contenuto del runbook.
+
+Azure CLI, Bicep e i moduli PowerShell richiesti vengono installati
+automaticamente dallo script di deployment.
+
+7. DATI DA CONFERMARE
+- Tenant ID: [COMPILARE]
+- Subscription ID: [COMPILARE]
+- Regione Azure: [COMPILARE]
+- Nome Resource Group: [COMPILARE]
+- Nome UAMI dedicata: [COMPILARE]
+- Naming convention dei gruppi Entra: [COMPILARE]
+- Modalità di autenticazione scelta: [COMPILARE]
+- Frequenza della schedule: [COMPILARE]
+- Destinatari degli alert: [COMPILARE]
+- Notifiche Teams richieste: [SÌ/NO]
+- Referente Azure: [COMPILARE]
+- Referente Microsoft Entra: [COMPILARE]
+- Finestra prevista per il deployment: [COMPILARE]
+
+Per ragioni di sicurezza, non rispondere a questa email allegando PFX, password,
+client secret, URL webhook o altre credenziali. Tali informazioni devono essere
+condivise esclusivamente tramite il canale sicuro concordato.
+
+Chiediamo cortesemente di restituire la checklist compilata e di confermare la
+disponibilità dei referenti con i ruoli sopra indicati.
+
+Cordiali saluti
+
+--nimbus-deployment-prerequisites
+Content-Type: text/html; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Prerequisiti deployment Nimbus.BitLockerGroupSync</title>
+</head>
+<body style="margin:0;padding:0;background:#eef2f6;font-family:Segoe UI,Arial,sans-serif;color:#172033;">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;background:#eef2f6;border-collapse:collapse;">
+    <tr><td style="padding:0;">
+      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;background:#0b3a6e;border-collapse:collapse;">
+        <tr><td style="padding:32px 5%;color:#ffffff;">
+          <div style="font-size:13px;letter-spacing:1.4px;text-transform:uppercase;color:#a9d1ff;">Nimbus | Customer Delivery</div>
+          <div style="font-size:28px;font-weight:700;line-height:1.25;margin-top:7px;">Prerequisiti per il deployment</div>
+          <div style="font-size:16px;line-height:1.5;margin-top:8px;color:#d9eaff;">Nimbus.BitLockerGroupSync · Azure, Microsoft Entra e Microsoft Graph</div>
+        </td></tr>
+      </table>
+
+      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;background:#ffffff;border-collapse:collapse;">
+        <tr><td style="padding:28px 5%;">
+          <p style="font-size:16px;line-height:1.65;margin:0 0 18px;">Gentile Cliente,</p>
+          <p style="font-size:16px;line-height:1.65;margin:0 0 24px;">per pianificare il deployment di <strong>Nimbus.BitLockerGroupSync</strong> chiediamo di predisporre e confermare i requisiti tecnici, i ruoli e le autorizzazioni riportati di seguito.</p>
+
+          <h2 style="font-size:20px;color:#0b3a6e;margin:0 0 12px;">1. Ambiente Microsoft</h2>
+          <ul style="font-size:15px;line-height:1.7;margin:0 0 24px;padding-left:24px;">
+            <li>Tenant Microsoft Entra con device registrati.</li>
+            <li>Microsoft Intune attivo e device gestiti.</li>
+            <li>BitLocker abilitato e recovery key disponibili in Entra, se sono richieste le viste di verifica escrow.</li>
+            <li>Subscription Azure attiva.</li>
+            <li>Tenant ID, Subscription ID, regione approvata e nome del Resource Group.</li>
+          </ul>
+
+          <h2 style="font-size:20px;color:#0b3a6e;margin:0 0 12px;">2. Ruoli e responsabilità</h2>
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;border:1px solid #d9e2ec;border-collapse:collapse;margin:0 0 24px;font-size:14px;">
+            <tr style="background:#edf4fb;"><th align="left" style="padding:11px 14px;border-bottom:1px solid #d9e2ec;">Soggetto</th><th align="left" style="padding:11px 14px;border-bottom:1px solid #d9e2ec;">Ruolo minimo</th><th align="left" style="padding:11px 14px;border-bottom:1px solid #d9e2ec;">Ambito e utilizzo</th></tr>
+            <tr><td style="padding:11px 14px;border-bottom:1px solid #e6edf4;">Operatore Azure</td><td style="padding:11px 14px;border-bottom:1px solid #e6edf4;"><strong>Contributor</strong></td><td style="padding:11px 14px;border-bottom:1px solid #e6edf4;">Subscription, se deve creare il Resource Group e registrare i provider.</td></tr>
+            <tr><td style="padding:11px 14px;border-bottom:1px solid #e6edf4;">Operatore Azure</td><td style="padding:11px 14px;border-bottom:1px solid #e6edf4;"><strong>Contributor</strong></td><td style="padding:11px 14px;border-bottom:1px solid #e6edf4;">Resource Group esistente, se i provider sono già registrati.</td></tr>
+            <tr><td style="padding:11px 14px;border-bottom:1px solid #e6edf4;">Amministratore Entra</td><td style="padding:11px 14px;border-bottom:1px solid #e6edf4;"><strong>Privileged Role Administrator</strong></td><td style="padding:11px 14px;border-bottom:1px solid #e6edf4;">Tenant Entra, per approvare e assegnare le permission Graph.</td></tr>
+            <tr><td style="padding:11px 14px;">Referente Teams</td><td style="padding:11px 14px;">Creatore Workflows</td><td style="padding:11px 14px;">Solo se sono richieste notifiche nel Team e canale scelti.</td></tr>
+          </table>
+
+          <div style="background:#f6f9fc;border-left:5px solid #0067b8;padding:15px 18px;margin:0 0 24px;line-height:1.6;"><strong>Minimo privilegio.</strong> Il ruolo Global Administrator è tecnicamente idoneo alle attività Entra, ma non è necessario. È raccomandato l'utilizzo di Privileged Role Administrator.</div>
+
+          <h2 style="font-size:20px;color:#0b3a6e;margin:0 0 12px;">3. Resource Provider Azure</h2>
+          <p style="font-size:15px;line-height:1.65;margin:0 0 10px;">Devono essere registrati:</p>
+          <p style="font-family:Consolas,monospace;font-size:14px;line-height:1.8;background:#172033;color:#f5f8fb;padding:15px 18px;margin:0 0 24px;">Microsoft.Automation<br>Microsoft.ManagedIdentity<br>Microsoft.OperationalInsights<br>Microsoft.Insights<br>Microsoft.Resources<br>Microsoft.Logic <span style="color:#a9d1ff;">(solo per notifiche Teams)</span></p>
+
+          <h2 style="font-size:20px;color:#0b3a6e;margin:0 0 12px;">4. Autenticazione Microsoft Graph</h2>
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;border:1px solid #d9e2ec;border-collapse:collapse;margin:0 0 24px;font-size:14px;">
+            <tr style="background:#edf4fb;"><th align="left" style="padding:11px 14px;border-bottom:1px solid #d9e2ec;">Opzione</th><th align="left" style="padding:11px 14px;border-bottom:1px solid #d9e2ec;">Elementi da predisporre</th></tr>
+            <tr><td style="padding:11px 14px;border-bottom:1px solid #e6edf4;"><strong>UAMI dedicata</strong><br><span style="color:#287a3d;">Raccomandata</span></td><td style="padding:11px 14px;border-bottom:1px solid #e6edf4;">Creata automaticamente dal deployment e collegata all'Automation Account. Il cliente approva il nome e assegna le permission Graph al Principal/Object ID restituito.</td></tr>
+            <tr><td style="padding:11px 14px;border-bottom:1px solid #e6edf4;"><strong>App Registration + certificato</strong></td><td style="padding:11px 14px;border-bottom:1px solid #e6edf4;">Tenant ID, Client ID, certificato pubblico caricato, PFX con private key e password tramite canale sicuro.</td></tr>
+            <tr><td style="padding:11px 14px;"><strong>App Registration + secret</strong></td><td style="padding:11px 14px;">Tenant ID, Client ID, secret tramite canale sicuro e processo di rotazione concordato.</td></tr>
+          </table>
+
+          <h2 style="font-size:20px;color:#0b3a6e;margin:0 0 12px;">5. Application permission Microsoft Graph</h2>
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;border:1px solid #d9e2ec;border-collapse:collapse;margin:0 0 24px;font-size:14px;">
+            <tr><td style="padding:10px 14px;border-bottom:1px solid #e6edf4;font-family:Consolas,monospace;">DeviceManagementManagedDevices.Read.All</td><td style="padding:10px 14px;border-bottom:1px solid #e6edf4;">Lettura dei device gestiti da Intune</td></tr>
+            <tr><td style="padding:10px 14px;border-bottom:1px solid #e6edf4;font-family:Consolas,monospace;">BitlockerKey.Read.All</td><td style="padding:10px 14px;border-bottom:1px solid #e6edf4;">Verifica delle recovery key</td></tr>
+            <tr><td style="padding:10px 14px;border-bottom:1px solid #e6edf4;font-family:Consolas,monospace;">Device.ReadWrite.All</td><td style="padding:10px 14px;border-bottom:1px solid #e6edf4;">Gestione della membership degli oggetti device</td></tr>
+            <tr><td style="padding:10px 14px;border-bottom:1px solid #e6edf4;font-family:Consolas,monospace;">Group.Create</td><td style="padding:10px 14px;border-bottom:1px solid #e6edf4;">Creazione dei gruppi di sicurezza</td></tr>
+            <tr><td style="padding:10px 14px;font-family:Consolas,monospace;">GroupMember.ReadWrite.All</td><td style="padding:10px 14px;">Riconciliazione della membership</td></tr>
+          </table>
+          <p style="font-size:14px;line-height:1.65;margin:0 0 24px;color:#52606d;">Per assegnare gli app role a una Managed Identity, il Privileged Role Administrator utilizza temporaneamente gli scope delegati <strong>Application.Read.All</strong> e <strong>AppRoleAssignment.ReadWrite.All</strong>. Per un'App Registration, il consenso viene concesso dal portale Entra.</p>
+
+          <h2 style="font-size:20px;color:#0b3a6e;margin:0 0 12px;">6. Postazione e connettività</h2>
+          <ul style="font-size:15px;line-height:1.7;margin:0 0 24px;padding-left:24px;">
+            <li>Windows 10/11 o Windows Server con Windows PowerShell.</li>
+            <li>Diritto di installare Azure CLI e componenti PowerShell.</li>
+            <li>Git, se la repository deve essere clonata.</li>
+            <li>Accesso HTTPS a Azure Resource Manager, Microsoft Entra, Microsoft Graph, PowerShell Gallery, <code>aka.ms</code>, WinGet e host del runbook.</li>
+          </ul>
+          <div style="background:#eef8f0;border-left:5px solid #3b8c4a;padding:15px 18px;margin:0 0 24px;line-height:1.6;"><strong>Installazione automatica.</strong> Azure CLI, Bicep e i moduli PowerShell richiesti vengono installati dallo script di deployment.</div>
+
+          <h2 style="font-size:20px;color:#0b3a6e;margin:0 0 12px;">7. Dati da confermare</h2>
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;background:#f6f9fc;border:1px solid #d9e2ec;border-collapse:collapse;margin:0 0 24px;font-size:14px;">
+            <tr><td style="padding:10px 14px;border-bottom:1px solid #d9e2ec;width:42%;font-weight:600;">Tenant ID</td><td style="padding:10px 14px;border-bottom:1px solid #d9e2ec;">[COMPILARE]</td></tr>
+            <tr><td style="padding:10px 14px;border-bottom:1px solid #d9e2ec;font-weight:600;">Subscription ID</td><td style="padding:10px 14px;border-bottom:1px solid #d9e2ec;">[COMPILARE]</td></tr>
+            <tr><td style="padding:10px 14px;border-bottom:1px solid #d9e2ec;font-weight:600;">Regione Azure</td><td style="padding:10px 14px;border-bottom:1px solid #d9e2ec;">[COMPILARE]</td></tr>
+            <tr><td style="padding:10px 14px;border-bottom:1px solid #d9e2ec;font-weight:600;">Nome Resource Group</td><td style="padding:10px 14px;border-bottom:1px solid #d9e2ec;">[COMPILARE]</td></tr>
+            <tr><td style="padding:10px 14px;border-bottom:1px solid #d9e2ec;font-weight:600;">Nome UAMI dedicata</td><td style="padding:10px 14px;border-bottom:1px solid #d9e2ec;">[COMPILARE]</td></tr>
+            <tr><td style="padding:10px 14px;border-bottom:1px solid #d9e2ec;font-weight:600;">Naming gruppi Entra</td><td style="padding:10px 14px;border-bottom:1px solid #d9e2ec;">[COMPILARE]</td></tr>
+            <tr><td style="padding:10px 14px;border-bottom:1px solid #d9e2ec;font-weight:600;">Modalità di autenticazione</td><td style="padding:10px 14px;border-bottom:1px solid #d9e2ec;">[COMPILARE]</td></tr>
+            <tr><td style="padding:10px 14px;border-bottom:1px solid #d9e2ec;font-weight:600;">Frequenza schedule</td><td style="padding:10px 14px;border-bottom:1px solid #d9e2ec;">[COMPILARE]</td></tr>
+            <tr><td style="padding:10px 14px;border-bottom:1px solid #d9e2ec;font-weight:600;">Destinatari alert</td><td style="padding:10px 14px;border-bottom:1px solid #d9e2ec;">[COMPILARE]</td></tr>
+            <tr><td style="padding:10px 14px;border-bottom:1px solid #d9e2ec;font-weight:600;">Notifiche Teams</td><td style="padding:10px 14px;border-bottom:1px solid #d9e2ec;">[SÌ / NO]</td></tr>
+            <tr><td style="padding:10px 14px;border-bottom:1px solid #d9e2ec;font-weight:600;">Referenti Azure ed Entra</td><td style="padding:10px 14px;border-bottom:1px solid #d9e2ec;">[COMPILARE]</td></tr>
+            <tr><td style="padding:10px 14px;font-weight:600;">Finestra di deployment</td><td style="padding:10px 14px;">[COMPILARE]</td></tr>
+          </table>
+
+          <div style="background:#fff7e6;border-left:5px solid #e89b00;padding:16px 18px;margin:0 0 24px;line-height:1.6;"><strong>Protezione delle credenziali.</strong> Non rispondere allegando PFX, password, client secret, URL webhook o altre credenziali. Questi dati devono essere condivisi esclusivamente tramite il canale sicuro concordato.</div>
+
+          <p style="font-size:16px;line-height:1.65;margin:0 0 18px;">Chiediamo cortesemente di restituire la checklist compilata e di confermare la disponibilità dei referenti con i ruoli indicati.</p>
+          <p style="font-size:16px;line-height:1.65;margin:0;">Cordiali saluti</p>
+        </td></tr>
+      </table>
+
+      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;background:#172033;border-collapse:collapse;">
+        <tr><td style="padding:20px 5%;font-size:12px;line-height:1.6;color:#c9d3df;">Nimbus.BitLockerGroupSync · Preparazione deployment cliente<br>Mittente, destinatario, campi e firma sono modificabili aprendo il file EML come bozza.</td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>
+
+--nimbus-deployment-prerequisites--

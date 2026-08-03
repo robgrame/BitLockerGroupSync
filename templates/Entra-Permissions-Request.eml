@@ -1,0 +1,139 @@
+From: "MODIFICARE MITTENTE" <sender@example.com>
+To: "MODIFICARE DESTINATARIO" <entra-admin@example.com>
+Subject: Azione richiesta - Permission Microsoft Graph per [AUTOMATION ACCOUNT]
+Date: Mon, 03 Aug 2026 00:00:00 +0200
+MIME-Version: 1.0
+X-Unsent: 1
+Content-Type: multipart/alternative; boundary="nimbus-entra-permissions"
+
+--nimbus-entra-permissions
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+Gentile Amministratore Microsoft Entra,
+
+per completare il deployment di Nimbus.BitLockerGroupSync occorre assegnare alla UAMI dedicata collegata all'Automation Account {{AUTOMATION_ACCOUNT}} le seguenti application permission Microsoft Graph:
+
+- DeviceManagementManagedDevices.Read.All
+- BitlockerKey.Read.All
+- Device.ReadWrite.All
+- Group.Create
+- GroupMember.ReadWrite.All
+
+Tenant ID: {{TENANT_ID}}
+Subscription ID: {{SUBSCRIPTION_ID}}
+Resource group: {{RESOURCE_GROUP}}
+UAMI object ID: {{MANAGED_IDENTITY_PRINCIPAL_ID}}
+
+Microsoft non consente attualmente di aggiungere queste permission a una managed identity esclusivamente dal portale Entra. La procedura controllata prevede la verifica dell'identità nel portale, l'esecuzione dello script Grant-GraphPermissions.ps1 da parte di un Privileged Role Administrator e la verifica finale nel portale.
+
+Procedura:
+1. Accedere a https://entra.microsoft.com.
+2. Aprire Identità > Applicazioni > Applicazioni aziendali.
+3. Impostare Tipo applicazione = Identità gestite e cercare la UAMI dedicata collegata a {{AUTOMATION_ACCOUNT}}.
+4. Verificare che l'ID oggetto corrisponda a {{MANAGED_IDENTITY_PRINCIPAL_ID}}.
+5. Da una postazione amministrativa o da Azure Cloud Shell PowerShell, eseguire:
+   .\scripts\Grant-GraphPermissions.ps1 -ManagedIdentityPrincipalId '{{MANAGED_IDENTITY_PRINCIPAL_ID}}' -TenantId '{{TENANT_ID}}' -UseDeviceCode
+6. Tornare all'applicazione aziendale nel portale Entra e verificare in Sicurezza > Autorizzazioni che siano presenti le cinque permission elencate.
+7. Rispondere alla presente comunicazione confermando data, operatore ed esito.
+
+Ruolo richiesto: Privileged Role Administrator. Non sono necessari client secret.
+
+Cordiali saluti
+
+--nimbus-entra-permissions
+Content-Type: text/html; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Richiesta permission Microsoft Graph</title>
+</head>
+<body style="margin:0;padding:0;background:#eef2f6;font-family:Segoe UI,Arial,sans-serif;color:#172033;">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;background:#eef2f6;border-collapse:collapse;">
+    <tr>
+      <td style="padding:0;">
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;background:#0b3a6e;border-collapse:collapse;">
+          <tr>
+            <td style="padding:30px 5%;color:#ffffff;">
+              <div style="font-size:13px;letter-spacing:1.4px;text-transform:uppercase;color:#a9d1ff;">Nimbus | Customer Delivery</div>
+              <div style="font-size:28px;font-weight:700;line-height:1.25;margin-top:7px;">Azione richiesta: permission Microsoft Graph</div>
+              <div style="font-size:16px;line-height:1.5;margin-top:8px;color:#d9eaff;">Completamento deployment di Nimbus.BitLockerGroupSync</div>
+            </td>
+          </tr>
+        </table>
+
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;background:#ffffff;border-collapse:collapse;">
+          <tr>
+            <td style="padding:28px 5%;">
+              <p style="font-size:16px;line-height:1.65;margin:0 0 18px;">Gentile Amministratore Microsoft Entra,</p>
+              <p style="font-size:16px;line-height:1.65;margin:0 0 22px;">per completare il deployment è necessaria un'attività amministrativa controllata sulla UAMI dedicata collegata all'Automation Account <strong>{{AUTOMATION_ACCOUNT_HTML}}</strong>.</p>
+
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;background:#f6f9fc;border:1px solid #d9e2ec;border-collapse:collapse;margin:0 0 24px;">
+                <tr><td style="padding:12px 16px;width:190px;font-weight:600;border-bottom:1px solid #d9e2ec;">Tenant ID</td><td style="padding:12px 16px;border-bottom:1px solid #d9e2ec;font-family:Consolas,monospace;">{{TENANT_ID_HTML}}</td></tr>
+                <tr><td style="padding:12px 16px;font-weight:600;border-bottom:1px solid #d9e2ec;">Subscription ID</td><td style="padding:12px 16px;border-bottom:1px solid #d9e2ec;font-family:Consolas,monospace;">{{SUBSCRIPTION_ID_HTML}}</td></tr>
+                <tr><td style="padding:12px 16px;font-weight:600;border-bottom:1px solid #d9e2ec;">Resource group</td><td style="padding:12px 16px;border-bottom:1px solid #d9e2ec;">{{RESOURCE_GROUP_HTML}}</td></tr>
+                <tr><td style="padding:12px 16px;font-weight:600;border-bottom:1px solid #d9e2ec;">Automation Account</td><td style="padding:12px 16px;border-bottom:1px solid #d9e2ec;">{{AUTOMATION_ACCOUNT_HTML}}</td></tr>
+                <tr><td style="padding:12px 16px;font-weight:600;">UAMI object ID</td><td style="padding:12px 16px;font-family:Consolas,monospace;">{{MANAGED_IDENTITY_PRINCIPAL_ID_HTML}}</td></tr>
+              </table>
+
+              <h2 style="font-size:20px;color:#0b3a6e;margin:0 0 12px;">Permission richieste</h2>
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;border:1px solid #d9e2ec;border-collapse:collapse;margin-bottom:24px;">
+                <tr><td style="padding:10px 16px;border-bottom:1px solid #e6edf4;font-family:Consolas,monospace;">DeviceManagementManagedDevices.Read.All</td><td style="padding:10px 16px;border-bottom:1px solid #e6edf4;">Lettura device gestiti da Intune</td></tr>
+                <tr><td style="padding:10px 16px;border-bottom:1px solid #e6edf4;font-family:Consolas,monospace;">BitlockerKey.Read.All</td><td style="padding:10px 16px;border-bottom:1px solid #e6edf4;">Verifica escrow recovery key</td></tr>
+                <tr><td style="padding:10px 16px;border-bottom:1px solid #e6edf4;font-family:Consolas,monospace;">Device.ReadWrite.All</td><td style="padding:10px 16px;border-bottom:1px solid #e6edf4;">Gestione membership di oggetti device</td></tr>
+                <tr><td style="padding:10px 16px;border-bottom:1px solid #e6edf4;font-family:Consolas,monospace;">Group.Create</td><td style="padding:10px 16px;border-bottom:1px solid #e6edf4;">Creazione gruppi di sicurezza</td></tr>
+                <tr><td style="padding:10px 16px;font-family:Consolas,monospace;">GroupMember.ReadWrite.All</td><td style="padding:10px 16px;">Riconciliazione membership</td></tr>
+              </table>
+
+              <div style="background:#fff7e6;border-left:5px solid #e89b00;padding:16px 18px;margin:0 0 24px;line-height:1.55;">
+                <strong>Nota tecnica.</strong> Microsoft non consente attualmente di aggiungere application permission Microsoft Graph a una managed identity esclusivamente dal portale Entra. Il portale viene usato per identificazione e verifica; l'assegnazione viene eseguita esplicitamente da un <strong>Privileged Role Administrator</strong> tramite Microsoft Graph PowerShell.
+              </div>
+
+              <h2 style="font-size:20px;color:#0b3a6e;margin:0 0 12px;">Procedura controllata</h2>
+              <ol style="font-size:15px;line-height:1.7;margin:0 0 20px;padding-left:24px;">
+                <li>Accedere al <a href="https://entra.microsoft.com" style="color:#0067b8;font-weight:600;">Microsoft Entra admin center</a>.</li>
+                <li>Aprire <strong>Identità → Applicazioni → Applicazioni aziendali</strong>.</li>
+                <li>Impostare <strong>Tipo applicazione = Identità gestite</strong> e cercare la UAMI dedicata collegata a <strong>{{AUTOMATION_ACCOUNT_HTML}}</strong>.</li>
+                <li>Verificare che l'ID oggetto corrisponda a <code style="font-family:Consolas,monospace;">{{MANAGED_IDENTITY_PRINCIPAL_ID_HTML}}</code>.</li>
+                <li>Da una postazione amministrativa o da <a href="https://shell.azure.com/powershell" style="color:#0067b8;font-weight:600;">Azure Cloud Shell PowerShell</a>, eseguire il comando seguente dal pacchetto di deployment:</li>
+              </ol>
+
+              <div style="background:#172033;color:#f5f8fb;padding:16px 18px;font-family:Consolas,monospace;font-size:14px;line-height:1.55;overflow-wrap:anywhere;margin-bottom:20px;">.\scripts\Grant-GraphPermissions.ps1 -ManagedIdentityPrincipalId '{{MANAGED_IDENTITY_PRINCIPAL_ID_HTML}}' -TenantId '{{TENANT_ID_HTML}}' -UseDeviceCode</div>
+
+              <ol start="6" style="font-size:15px;line-height:1.7;margin:0 0 24px;padding-left:24px;">
+                <li>Tornare all'applicazione aziendale nel portale Entra e verificare in <strong>Sicurezza → Autorizzazioni</strong> la presenza delle cinque permission.</li>
+                <li>Rispondere a questa comunicazione indicando data, operatore ed esito.</li>
+              </ol>
+
+              <table role="presentation" cellspacing="0" cellpadding="0" border="0" style="margin:0 0 18px;">
+                <tr>
+                  <td style="background:#0067b8;border-radius:3px;">
+                    <a href="https://entra.microsoft.com" style="display:inline-block;padding:13px 22px;color:#ffffff;text-decoration:none;font-weight:700;">Apri Microsoft Entra admin center</a>
+                  </td>
+                </tr>
+              </table>
+
+              <p style="font-size:14px;line-height:1.6;color:#52606d;margin:0;">Non sono necessari client secret o certificati. L'assegnazione è idempotente e viene registrata nei log di audit Microsoft Entra.</p>
+            </td>
+          </tr>
+        </table>
+
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;background:#172033;border-collapse:collapse;">
+          <tr>
+            <td style="padding:20px 5%;font-size:12px;line-height:1.6;color:#c9d3df;">
+              Nimbus.BitLockerGroupSync · Richiesta amministrativa per deployment cliente<br>
+              Mittente e destinatario sono modificabili aprendo il file EML come bozza.
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+
+--nimbus-entra-permissions--

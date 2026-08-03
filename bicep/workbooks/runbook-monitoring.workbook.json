@@ -37,7 +37,7 @@
       "type": 3,
       "content": {
         "version": "KqlItem/1.0",
-        "query": "AzureDiagnostics\n| where ResourceProvider == \"MICROSOFT.AUTOMATION\" and Category == \"JobLogs\"\n| where RunbookName_s == \"Sync-BitLockerComplianceGroups\"\n| where ResultType in (\"Completed\",\"Failed\",\"Suspended\",\"Stopped\")\n| summarize Jobs = count() by ResultType, bin(TimeGenerated, 1h)\n| render columnchart",
+        "query": "AzureDiagnostics\n| where ResourceProvider == \"MICROSOFT.AUTOMATION\" and Category == \"JobLogs\"\n| where RunbookName_s == \"__RUNBOOK_NAME__\"\n| where ResultType in (\"Completed\",\"Failed\",\"Suspended\",\"Stopped\")\n| summarize Jobs = count() by ResultType, bin(TimeGenerated, 1h)\n| render columnchart",
         "size": 0,
         "title": "📈 Esito job nel tempo",
         "timeContextFromParameter": "TimeRange",
@@ -50,7 +50,7 @@
       "type": 3,
       "content": {
         "version": "KqlItem/1.0",
-        "query": "AzureDiagnostics\n| where ResourceProvider == \"MICROSOFT.AUTOMATION\" and Category == \"JobLogs\"\n| where RunbookName_s == \"Sync-BitLockerComplianceGroups\"\n| where ResultType in (\"Completed\",\"Failed\",\"Suspended\",\"Started\",\"Stopped\")\n| project TimeGenerated, ResultType, JobId = JobId_g\n| order by TimeGenerated desc\n| take 50",
+        "query": "AzureDiagnostics\n| where ResourceProvider == \"MICROSOFT.AUTOMATION\" and Category == \"JobLogs\"\n| where RunbookName_s == \"__RUNBOOK_NAME__\"\n| where ResultType in (\"Completed\",\"Failed\",\"Suspended\",\"Started\",\"Stopped\")\n| project TimeGenerated, ResultType, JobId = JobId_g\n| order by TimeGenerated desc\n| take 50",
         "size": 0,
         "title": "🗒️ Ultimi job",
         "timeContextFromParameter": "TimeRange",
@@ -63,7 +63,7 @@
       "type": 3,
       "content": {
         "version": "KqlItem/1.0",
-        "query": "AzureDiagnostics\n| where ResourceProvider == \"MICROSOFT.AUTOMATION\" and Category == \"JobStreams\"\n| where RunbookName_s == \"Sync-BitLockerComplianceGroups\"\n| where StreamType_s == \"Error\" or ResultDescription contains \"[ERROR]\"\n| project TimeGenerated, StreamType_s, ResultDescription\n| order by TimeGenerated desc\n| take 50",
+        "query": "AzureDiagnostics\n| where ResourceProvider == \"MICROSOFT.AUTOMATION\" and Category == \"JobStreams\"\n| where RunbookName_s == \"__RUNBOOK_NAME__\"\n| where StreamType_s == \"Error\" or ResultDescription contains \"[ERROR]\"\n| project TimeGenerated, StreamType_s, ResultDescription\n| order by TimeGenerated desc\n| take 50",
         "size": 0,
         "title": "🚨 Errori recenti",
         "timeContextFromParameter": "TimeRange",
@@ -76,7 +76,7 @@
       "type": 3,
       "content": {
         "version": "KqlItem/1.0",
-        "query": "AzureDiagnostics\n| where ResourceProvider == \"MICROSOFT.AUTOMATION\" and Category == \"JobStreams\"\n| where RunbookName_s == \"Sync-BitLockerComplianceGroups\"\n| where ResultDescription contains \"Riepilogo\" or ResultDescription contains \"Encrypted:\" or ResultDescription contains \"KeyMissing\"\n| project TimeGenerated, ResultDescription\n| order by TimeGenerated desc\n| take 30",
+        "query": "AzureDiagnostics\n| where ResourceProvider == \"MICROSOFT.AUTOMATION\" and Category == \"JobStreams\"\n| where RunbookName_s == \"__RUNBOOK_NAME__\"\n| where ResultDescription contains \"Riepilogo\" or ResultDescription contains \"Encrypted:\" or ResultDescription contains \"KeyMissing\"\n| project TimeGenerated, ResultDescription\n| order by TimeGenerated desc\n| take 30",
         "size": 0,
         "title": "🧾 Righe di riepilogo (verbose)",
         "timeContextFromParameter": "TimeRange",
@@ -84,6 +84,19 @@
         "resourceType": "microsoft.operationalinsights/workspaces"
       },
       "name": "summary-lines"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "AzureDiagnostics\n| where ResourceProvider == \"MICROSOFT.AUTOMATION\" and Category == \"JobStreams\"\n| where RunbookName_s == \"__RUNBOOK_NAME__\"\n| where ResultDescription contains \"[MEMBERSHIP_ADD]\"\n| extend Payload = parse_json(extract(@\"(\\{.*\\})\", 1, ResultDescription))\n| extend Gruppo = tostring(Payload.groupName), Device = tostring(Payload.deviceName), ObjectId = tostring(Payload.objectId)\n| where isnotempty(Device)\n| project TimeGenerated, Gruppo, Device, ObjectId, JobId = JobId_g\n| order by TimeGenerated desc\n| take 500",
+        "size": 0,
+        "title": "➕ Device aggiunti ai gruppi",
+        "timeContextFromParameter": "TimeRange",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces"
+      },
+      "name": "membership-add-details"
     }
   ],
   "fallbackResourceIds": [],

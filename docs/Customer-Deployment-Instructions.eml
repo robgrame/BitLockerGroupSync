@@ -1,0 +1,237 @@
+From: "MODIFICARE MITTENTE" <sender@example.com>
+To: "MODIFICARE DESTINATARIO" <customer@example.com>
+Subject: Nimbus.BitLockerGroupSync - istruzioni operative per deployment Azure e autorizzazioni Entra
+Date: Mon, 03 Aug 2026 17:11:03 +0200
+MIME-Version: 1.0
+X-Unsent: 1
+Content-Type: multipart/alternative; boundary="nimbus-deployment-instructions"
+
+--nimbus-deployment-instructions
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+Gentile Cliente,
+
+di seguito riportiamo le attività necessarie per distribuire
+Nimbus.BitLockerGroupSync e autorizzare la User Assigned Managed Identity (UAMI)
+dedicata.
+
+DATI DA CONFERMARE
+- Resource Group: [COMPILARE]
+- Regione Azure: [COMPILARE, esempio: italynorth]
+- Subscription: viene utilizzata quella del contesto Azure corrente
+- Tenant Microsoft Entra: viene utilizzato quello del contesto Azure corrente
+
+1. POSTAZIONE DI DEPLOYMENT
+
+È richiesta una postazione Windows con:
+- Windows PowerShell o PowerShell 7;
+- accesso HTTPS ad Azure, Microsoft Entra, Microsoft Graph, PowerShell Gallery,
+  aka.ms, WinGet e all'host del contenuto del runbook;
+- diritto di installare Azure CLI;
+- repository Nimbus.BitLockerGroupSync disponibile localmente.
+
+Non è necessario installare manualmente i componenti Azure. Per impostazione
+predefinita deploy.ps1:
+- installa Azure CLI tramite WinGet;
+- usa il pacchetto MSI ufficiale se WinGet non è disponibile;
+- installa o aggiorna Bicep tramite Azure CLI;
+- installa i moduli Az.Accounts >= 5.0.0;
+- installa i moduli Az.Resources >= 8.0.0;
+- installa i moduli Az.Automation >= 1.11.0.
+
+Lo script Grant-GraphPermissions.ps1 installa, se mancanti:
+- Microsoft.Graph.Authentication >= 2.28.0;
+- Microsoft.Graph.Applications >= 2.28.0.
+
+2. RUOLO AZURE
+
+Per creare un nuovo Resource Group, registrare i Resource Provider e distribuire
+la soluzione, l'operatore deve disporre del ruolo Contributor sulla subscription.
+
+Se il Resource Group è già esistente, è sufficiente Contributor sul Resource
+Group soltanto quando i Resource Provider sono già stati registrati da un
+amministratore della subscription.
+
+La registrazione richiede l'azione:
+Microsoft.Resources/subscriptions/providers/register/action
+
+Resource Provider utilizzati:
+- Microsoft.Automation
+- Microsoft.ManagedIdentity
+- Microsoft.OperationalInsights
+- Microsoft.Insights
+- Microsoft.Resources
+- Microsoft.Logic, per le notifiche Teams
+
+3. VERIFICA DEL CONTESTO
+
+Da PowerShell, nella cartella principale della repository:
+
+Get-AzContext
+
+Verificare attentamente account, tenant e subscription. Se non è presente un
+contesto Azure, deploy.ps1 richiede automaticamente il login tramite device code.
+
+4. PRIMA FASE - DEPLOYMENT
+
+Eseguire su una singola riga:
+
+.\deploy.ps1 -ResourceGroupName '[RESOURCE GROUP]' -Location '[REGIONE]'
+
+Esempio:
+
+.\deploy.ps1 -ResourceGroupName 'rg-nimbus-bitlocker-prod-02' -Location 'italynorth'
+
+Non è necessario specificare TenantId, SubscriptionId o ParameterFile:
+- TenantId e SubscriptionId vengono letti dal contesto Azure corrente;
+- il file predefinito è .\bicep\main.bicepparam.
+
+Lo script esegue bootstrap, registrazione provider, creazione del Resource Group,
+preflight ARM/Bicep, what-if e deployment. Bicep crea la UAMI dedicata e la
+collega all'Automation Account.
+
+Se il nome dell'Automation Account è già utilizzato in un altro Resource Group
+della subscription, lo script genera automaticamente un nome deterministico con
+suffisso, che verrà riutilizzato nei deployment successivi sullo stesso RG.
+
+La prima fase non abilita schedule, dead-man alert, webhook o avvio del runbook.
+Annotare dalla console:
+- UAMI resource ID;
+- UAMI client ID;
+- UAMI principal/object ID.
+
+5. RUOLO E PERMISSION MICROSOFT ENTRA
+
+L'attività deve essere eseguita da un Privileged Role Administrator. Global
+Administrator è idoneo ma non necessario.
+
+Alla UAMI devono essere assegnate le seguenti application permission Microsoft
+Graph:
+- DeviceManagementManagedDevices.Read.All
+- BitlockerKey.Read.All
+- Device.ReadWrite.All
+- Group.Create
+- GroupMember.ReadWrite.All
+
+L'assegnazione usa temporaneamente gli scope delegati:
+- Application.Read.All
+- AppRoleAssignment.ReadWrite.All
+
+Eseguire:
+
+.\scripts\Grant-GraphPermissions.ps1 -ManagedIdentityPrincipalId '[UAMI PRINCIPAL ID]' -TenantId '[TENANT ID]' -UseDeviceCode
+
+Lo script è idempotente. Verificare successivamente la UAMI in Microsoft Entra
+admin center, nella vista Enterprise applications, e confermare la presenza
+delle cinque permission.
+
+6. SECONDA FASE - ATTIVAZIONE
+
+Dopo la conferma delle permission Graph, eseguire:
+
+.\deploy.ps1 -ResourceGroupName '[RESOURCE GROUP]' -Location '[REGIONE]' -SkipBootstrap -PermissionsConfirmed -StartJobNow
+
+Esempio:
+
+.\deploy.ps1 -ResourceGroupName 'rg-nimbus-bitlocker-prod-02' -Location 'italynorth' -SkipBootstrap -PermissionsConfirmed -StartJobNow
+
+Il secondo passaggio abilita schedule e monitoraggio dead-man, ricrea il
+jobSchedule con i parametri runtime aggiornati e avvia il primo job controllato.
+
+IMPORTANTE
+- Non usare PermissionsConfirmed prima della verifica delle permission.
+- Non inviare password, PFX, client secret o URL webhook via email.
+- Per ambienti produttivi utilizzare un file customer.local.bicepparam non
+  versionato e un runbookContentUri associato a una release immutabile.
+
+Cordiali saluti
+
+--nimbus-deployment-instructions
+Content-Type: text/html; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Istruzioni deployment Nimbus.BitLockerGroupSync</title>
+</head>
+<body style="margin:0;padding:0;background:#eef2f6;font-family:Segoe UI,Arial,sans-serif;color:#172033;">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;background:#eef2f6;border-collapse:collapse;">
+    <tr><td style="padding:0;">
+      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;background:#0b3a6e;border-collapse:collapse;">
+        <tr><td style="padding:32px 5%;color:#ffffff;">
+          <div style="font-size:13px;letter-spacing:1.4px;text-transform:uppercase;color:#a9d1ff;">Nimbus | Customer Delivery</div>
+          <div style="font-size:28px;font-weight:700;line-height:1.25;margin-top:7px;">Deployment Azure e autorizzazioni Entra</div>
+          <div style="font-size:16px;line-height:1.5;margin-top:8px;color:#d9eaff;">Istruzioni operative per Nimbus.BitLockerGroupSync</div>
+        </td></tr>
+      </table>
+
+      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;background:#ffffff;border-collapse:collapse;">
+        <tr><td style="padding:28px 5%;">
+          <p style="font-size:16px;line-height:1.65;margin:0 0 18px;">Gentile Cliente,</p>
+          <p style="font-size:16px;line-height:1.65;margin:0 0 24px;">di seguito riportiamo le attività necessarie per distribuire <strong>Nimbus.BitLockerGroupSync</strong> e autorizzare la User Assigned Managed Identity dedicata.</p>
+
+          <h2 style="font-size:20px;color:#0b3a6e;margin:0 0 12px;">Dati da confermare</h2>
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;background:#f6f9fc;border:1px solid #d9e2ec;border-collapse:collapse;margin:0 0 24px;font-size:14px;">
+            <tr><td style="padding:11px 14px;border-bottom:1px solid #d9e2ec;width:38%;font-weight:600;">Resource Group</td><td style="padding:11px 14px;border-bottom:1px solid #d9e2ec;">[COMPILARE]</td></tr>
+            <tr><td style="padding:11px 14px;border-bottom:1px solid #d9e2ec;font-weight:600;">Regione Azure</td><td style="padding:11px 14px;border-bottom:1px solid #d9e2ec;">[COMPILARE, esempio: italynorth]</td></tr>
+            <tr><td style="padding:11px 14px;border-bottom:1px solid #d9e2ec;font-weight:600;">Subscription</td><td style="padding:11px 14px;border-bottom:1px solid #d9e2ec;">Contesto Azure corrente</td></tr>
+            <tr><td style="padding:11px 14px;font-weight:600;">Tenant Entra</td><td style="padding:11px 14px;">Contesto Azure corrente</td></tr>
+          </table>
+
+          <h2 style="font-size:20px;color:#0b3a6e;margin:0 0 12px;">1. Postazione e componenti</h2>
+          <p style="font-size:15px;line-height:1.65;margin:0 0 10px;">È richiesta una postazione Windows con PowerShell, connettività HTTPS verso i servizi Microsoft e diritto di installare Azure CLI. Il deployment installa automaticamente:</p>
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;border:1px solid #d9e2ec;border-collapse:collapse;margin:0 0 24px;font-size:14px;">
+            <tr><td style="padding:10px 14px;border-bottom:1px solid #e6edf4;font-weight:600;">Azure CLI</td><td style="padding:10px 14px;border-bottom:1px solid #e6edf4;">WinGet o MSI ufficiale Microsoft</td></tr>
+            <tr><td style="padding:10px 14px;border-bottom:1px solid #e6edf4;font-weight:600;">Bicep</td><td style="padding:10px 14px;border-bottom:1px solid #e6edf4;"><code>az bicep install</code></td></tr>
+            <tr><td style="padding:10px 14px;border-bottom:1px solid #e6edf4;font-weight:600;">Az PowerShell</td><td style="padding:10px 14px;border-bottom:1px solid #e6edf4;">Az.Accounts ≥ 5.0.0, Az.Resources ≥ 8.0.0, Az.Automation ≥ 1.11.0</td></tr>
+            <tr><td style="padding:10px 14px;font-weight:600;">Microsoft Graph PowerShell</td><td style="padding:10px 14px;">Authentication e Applications ≥ 2.28.0, installati dallo script di grant</td></tr>
+          </table>
+
+          <h2 style="font-size:20px;color:#0b3a6e;margin:0 0 12px;">2. Ruolo Azure e Resource Provider</h2>
+          <div style="background:#f6f9fc;border-left:5px solid #0067b8;padding:15px 18px;margin:0 0 16px;line-height:1.6;"><strong>Nuovo Resource Group:</strong> ruolo <strong>Contributor sulla subscription</strong>, necessario per creare il Resource Group, registrare i provider e distribuire le risorse.</div>
+          <p style="font-size:14px;line-height:1.65;margin:0 0 12px;">La registrazione richiede <code>Microsoft.Resources/subscriptions/providers/register/action</code>.</p>
+          <p style="font-family:Consolas,monospace;font-size:14px;line-height:1.8;background:#172033;color:#f5f8fb;padding:15px 18px;margin:0 0 24px;">Microsoft.Automation<br>Microsoft.ManagedIdentity<br>Microsoft.OperationalInsights<br>Microsoft.Insights<br>Microsoft.Resources<br>Microsoft.Logic <span style="color:#a9d1ff;">(notifiche Teams)</span></p>
+
+          <h2 style="font-size:20px;color:#0b3a6e;margin:0 0 12px;">3. Prima fase: deployment</h2>
+          <p style="font-size:15px;line-height:1.65;margin:0 0 10px;">Verificare prima account, tenant e subscription:</p>
+          <div style="background:#172033;color:#f5f8fb;padding:15px 18px;font-family:Consolas,monospace;font-size:14px;margin:0 0 14px;">Get-AzContext</div>
+          <p style="font-size:15px;line-height:1.65;margin:0 0 10px;">Dalla cartella principale della repository, eseguire su una singola riga:</p>
+          <div style="background:#172033;color:#f5f8fb;padding:15px 18px;font-family:Consolas,monospace;font-size:14px;line-height:1.55;overflow-wrap:anywhere;margin:0 0 14px;">.\deploy.ps1 -ResourceGroupName '[RESOURCE GROUP]' -Location '[REGIONE]'</div>
+          <div style="background:#eef8f0;border-left:5px solid #3b8c4a;padding:15px 18px;margin:0 0 24px;line-height:1.6;"><strong>Semplificazione:</strong> TenantId, SubscriptionId e ParameterFile sono opzionali. Lo script usa il contesto Azure corrente e <code>.\bicep\main.bicepparam</code>.</div>
+          <p style="font-size:15px;line-height:1.65;margin:0 0 12px;">La prima fase esegue bootstrap, registrazione provider, preflight, what-if e deployment. Crea la UAMI dedicata ma mantiene schedule, alert dead-man, webhook e runbook non attivi. Annotare resource ID, client ID e principal ID della UAMI mostrati in console.</p>
+          <p style="font-size:14px;line-height:1.65;margin:0 0 24px;color:#52606d;">Se il nome dell'Automation Account è già utilizzato in un altro Resource Group della subscription, lo script genera automaticamente un nome deterministico con suffisso e lo riutilizza nei deployment successivi sullo stesso RG.</p>
+
+          <h2 style="font-size:20px;color:#0b3a6e;margin:0 0 12px;">4. Permission Microsoft Entra</h2>
+          <p style="font-size:15px;line-height:1.65;margin:0 0 12px;">L'attività richiede <strong>Privileged Role Administrator</strong>. Global Administrator è idoneo, ma non necessario.</p>
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;border:1px solid #d9e2ec;border-collapse:collapse;margin:0 0 16px;font-size:14px;">
+            <tr><td style="padding:9px 14px;border-bottom:1px solid #e6edf4;font-family:Consolas,monospace;">DeviceManagementManagedDevices.Read.All</td></tr>
+            <tr><td style="padding:9px 14px;border-bottom:1px solid #e6edf4;font-family:Consolas,monospace;">BitlockerKey.Read.All</td></tr>
+            <tr><td style="padding:9px 14px;border-bottom:1px solid #e6edf4;font-family:Consolas,monospace;">Device.ReadWrite.All</td></tr>
+            <tr><td style="padding:9px 14px;border-bottom:1px solid #e6edf4;font-family:Consolas,monospace;">Group.Create</td></tr>
+            <tr><td style="padding:9px 14px;font-family:Consolas,monospace;">GroupMember.ReadWrite.All</td></tr>
+          </table>
+          <p style="font-size:14px;line-height:1.65;margin:0 0 10px;">Eseguire con il principal ID restituito dalla prima fase:</p>
+          <div style="background:#172033;color:#f5f8fb;padding:15px 18px;font-family:Consolas,monospace;font-size:14px;line-height:1.55;overflow-wrap:anywhere;margin:0 0 24px;">.\scripts\Grant-GraphPermissions.ps1 -ManagedIdentityPrincipalId '[UAMI PRINCIPAL ID]' -TenantId '[TENANT ID]' -UseDeviceCode</div>
+
+          <h2 style="font-size:20px;color:#0b3a6e;margin:0 0 12px;">5. Seconda fase: attivazione</h2>
+          <p style="font-size:15px;line-height:1.65;margin:0 0 10px;">Dopo la verifica delle cinque permission sulla UAMI:</p>
+          <div style="background:#172033;color:#f5f8fb;padding:15px 18px;font-family:Consolas,monospace;font-size:14px;line-height:1.55;overflow-wrap:anywhere;margin:0 0 24px;">.\deploy.ps1 -ResourceGroupName '[RESOURCE GROUP]' -Location '[REGIONE]' -SkipBootstrap -PermissionsConfirmed -StartJobNow</div>
+
+          <div style="background:#fff7e6;border-left:5px solid #e89b00;padding:16px 18px;margin:0 0 24px;line-height:1.6;"><strong>Importante:</strong> non usare <code>PermissionsConfirmed</code> prima della verifica. Non inviare password, PFX, client secret o URL webhook via email.</div>
+          <p style="font-size:16px;line-height:1.65;margin:0;">Cordiali saluti</p>
+        </td></tr>
+      </table>
+
+      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;background:#172033;border-collapse:collapse;">
+        <tr><td style="padding:20px 5%;font-size:12px;line-height:1.6;color:#c9d3df;">Nimbus.BitLockerGroupSync · Istruzioni operative cliente<br>Mittente, destinatario, campi e firma sono modificabili aprendo il file EML come bozza.</td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>
+
+--nimbus-deployment-instructions--

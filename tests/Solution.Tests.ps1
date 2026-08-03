@@ -4,6 +4,7 @@ BeforeAll {
     $script:root = Split-Path $PSScriptRoot -Parent
     $script:runbook = Join-Path $root 'runbook\Sync-BitLockerComplianceGroups.ps1'
     $script:grant = Join-Path $root 'scripts\Grant-GraphPermissions.ps1'
+    $script:mailTemplate = Join-Path $root 'templates\Entra-Permissions-Request.eml'
     $script:deploy = Join-Path $root 'deploy.ps1'
 
     function Test-PsSyntax {
@@ -29,6 +30,16 @@ Describe 'Sintassi PowerShell' {
     It 'deploy.ps1 non ha errori di parsing' {
         (Test-PsSyntax -Path $script:deploy).Count | Should -Be 0
     }
+    It 'Le funzioni helper del deploy sono definite nello scope dello script' {
+        $ast = Get-Ast -Path $script:deploy
+        $helper = $ast.Find({
+                param($node)
+                $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+                $node.Name -eq 'ConvertTo-StringHashtable'
+            }, $true)
+        $helper | Should -Not -BeNullOrEmpty
+        $helper.Parent.Parent | Should -BeOfType [System.Management.Automation.Language.ScriptBlockAst]
+    }
 }
 
 Describe 'Parametri del runbook' {
@@ -48,9 +59,16 @@ Describe 'Parametri del runbook' {
         @{ Name = 'EnableKeyEscrowCheck' }
         @{ Name = 'TargetOperatingSystem' }
         @{ Name = 'WhatIfOnly' }
+        @{ Name = 'AuthenticationMode' }
+        @{ Name = 'ManagedIdentityClientId' }
+        @{ Name = 'AppTenantId' }
+        @{ Name = 'AppClientId' }
+        @{ Name = 'CertificateAssetName' }
+        @{ Name = 'ClientSecretVariableName' }
         @{ Name = 'KeyMissingAlertThreshold' }
         @{ Name = 'AlertWebhookUrl' }
         @{ Name = 'NotifyWebhookUrl' }
+        @{ Name = 'EnableMembershipDetailLogging' }
     ) {
         $script:paramNames | Should -Contain $Name
     }
@@ -95,6 +113,19 @@ Describe 'Permessi least-privilege' {
     It 'NON usa piu Group.ReadWrite.All' {
         $script:grantText | Should -Not -Match 'Group\.ReadWrite\.All'
     }
+    It 'Usa scope delegati minimi per assegnare gli app role' {
+        $script:grantText | Should -Match 'Application\.Read\.All'
+        $script:grantText | Should -Match 'AppRoleAssignment\.ReadWrite\.All'
+        $script:grantText | Should -Not -Match 'Application\.ReadWrite\.All'
+    }
+    It 'Supporta la revoca controllata prima della rimozione della UAMI' {
+        $script:grantText | Should -Match '\[switch\]\$Revoke'
+        $script:grantText | Should -Match 'Remove-MgServicePrincipalAppRoleAssignment'
+    }
+    It 'Installa autonomamente i moduli Graph se mancanti' {
+        $script:grantText | Should -Match 'Install-Module -Name \$moduleName'
+        $script:grantText | Should -Match "MinimumVersion 2\.28\.0"
+    }
 }
 
 Describe 'Logica di batching' {
@@ -107,5 +138,227 @@ Describe 'Logica di batching' {
     }
     It 'Filtra i device stale/retired' {
         $script:runbookText | Should -Match 'retirePending'
+    }
+    It 'Registra il dettaglio strutturato delle aggiunte riuscite' {
+        $script:runbookText | Should -Match '\[MEMBERSHIP_ADD\]'
+        $script:runbookText | Should -Match 'deviceName'
+        $script:runbookText | Should -Match 'LogMembershipDetails'
+    }
+}
+
+Describe 'Orchestrazione del deployment' {
+    BeforeAll { $script:deployText = Get-Content $script:deploy -Raw }
+    It 'Verifica tenant e subscription espliciti' {
+        $script:deployText | Should -Match '\$TenantId'
+        $script:deployText | Should -Match '\$SubscriptionId'
+        $script:deployText | Should -Match 'Set-AzContext'
+    }
+    It 'Esegue preflight e what-if prima del deployment' {
+        $script:deployText | Should -Match 'Test-AzResourceGroupDeployment'
+        $script:deployText | Should -Match 'Get-AzResourceGroupDeploymentWhatIfResult'
+        $script:deployText | Should -Match 'New-AzResourceGroupDeployment'
+    }
+    It 'Riusa i parametri runtime per avvio immediato e webhook' {
+        $script:deployText | Should -Match 'Outputs\.runbookParameters'
+        $script:deployText | Should -Match 'ConvertTo-StringHashtable'
+        $script:deployText | Should -Match 'Newtonsoft\.Json\.Linq\.JObject'
+        $script:deployText | Should -Match 'New-AzAutomationWebhook[\s\S]*-Parameters \$runbookParameters'
+        $script:deployText | Should -Match 'Start-AzAutomationRunbook[\s\S]*-Parameters \$runbookParameters'
+    }
+    It 'Installa Azure CLI, Bicep e i moduli PowerShell richiesti' {
+        $script:deployText | Should -Match 'winget install --id Microsoft\.AzureCLI'
+        $script:deployText | Should -Match 'https://aka\.ms/installazurecliwindowsx64'
+        $script:deployText | Should -Match 'az bicep install'
+        $script:deployText | Should -Match ([regex]::Escape("Join-Path `$HOME '.azure\bin'"))
+        $script:deployText | Should -Match 'Get-Command bicep'
+        $script:deployText | Should -Match 'Install-RequiredModule -Name Az\.Accounts'
+        $script:deployText | Should -Match 'Install-RequiredModule -Name Az\.Resources'
+        $script:deployText | Should -Match 'Install-RequiredModule -Name Az\.Automation'
+    }
+    It 'Usa device code per il login Azure' {
+        $script:deployText | Should -Match 'UseDeviceAuthentication'
+    }
+    It 'Registra automaticamente i resource provider richiesti' {
+        $script:deployText | Should -Match 'Register-RequiredResourceProvider'
+        $script:deployText | Should -Match 'Microsoft\.Automation'
+        $script:deployText | Should -Match 'Microsoft\.OperationalInsights'
+        $script:deployText | Should -Match 'Microsoft\.Insights'
+        $script:deployText | Should -Match 'Microsoft\.Logic'
+    }
+    It 'Risolve automaticamente i conflitti di nome dell Automation Account' {
+        $script:deployText | Should -Match 'Resolve-AutomationAccountName'
+        $script:deployText | Should -Match 'Microsoft\.Automation/automationAccounts'
+        $script:deployText | Should -Match 'SHA256'
+        $script:deployText | Should -Match 'automationAccountName = \$configuredAutomationAccountName'
+    }
+    It 'Disabilita runtime e dead-man fino alla conferma delle permission' {
+        $script:deployText | Should -Match '\$runtimeEnabled = \$GrantGraphPermissions -or \$PermissionsConfirmed'
+        $script:deployText | Should -Match 'enableSchedule\s+= \$runtimeEnabled'
+        $script:deployText | Should -Match 'enableDeadmanAlert\s+= \$runtimeEnabled'
+    }
+    It 'Mantiene le comunicazioni cliente separate dal deployment' {
+        $script:deployText | Should -Not -Match 'New-EntraPermissionRequest\.ps1'
+        $script:deployText | Should -Not -Match 'PermissionRequestSender'
+        $script:deployText | Should -Not -Match 'PermissionRequestRecipient'
+    }
+    It 'Supporta managed identity, certificato e client secret' {
+        $script:deployText | Should -Match 'parameterValues\.authenticationMode'
+        $script:deployText | Should -Match 'New-AzAutomationCertificate'
+        $script:deployText | Should -Match 'Set-AzAutomationCertificate'
+        $script:deployText | Should -Match 'appClientSecret = \$AppClientSecret'
+    }
+    It 'Delega a Bicep la creazione della UAMI dedicata' {
+        $script:deployText | Should -Match 'Get-BicepParameterValues'
+        $script:deployText | Should -Match 'Outputs\.managedIdentityClientId'
+        $script:deployText | Should -Match 'Outputs\.managedIdentityResourceId'
+        $script:deployText | Should -Not -Match 'UserAssignedIdentityPrincipalId'
+    }
+    It 'Ricrea il jobSchedule per applicare tutti i parametri runtime' {
+        $script:deployText | Should -Match 'Remove-ExistingJobScheduleLink'
+        $script:deployText | Should -Match 'Unregister-AzAutomationScheduledRunbook'
+        $script:deployText | Should -Match '\$_.ScheduleName -eq \$ScheduleName'
+    }
+    It 'Riusa certificato e secret esistenti nelle fasi successive' {
+        $script:deployText | Should -Match 'Get-AzAutomationCertificate'
+        $script:deployText | Should -Match 'Get-AzAutomationVariable'
+        $script:deployText | Should -Match "non esistente: specificare"
+    }
+}
+
+Describe 'Autenticazione Graph del runbook' {
+    BeforeAll { $script:runbookText = Get-Content $script:runbook -Raw }
+    It 'Usa Connect-MgGraph con managed identity' {
+        $script:runbookText | Should -Match 'Connect-MgGraph -Identity -ClientId \$ManagedIdentityClientId'
+        $script:runbookText | Should -Match 'ManagedIdentityClientId'
+        $script:runbookText | Should -Not -Match 'Connect-MgGraph -Identity -NoWelcome'
+    }
+    It 'Usa un Automation Certificate con private key' {
+        $script:runbookText | Should -Match 'Get-AutomationCertificate'
+        $script:runbookText | Should -Match 'Connect-MgGraph -TenantId \$TenantId -ClientId \$ApplicationClientId -Certificate \$certificate'
+        $script:runbookText | Should -Match 'HasPrivateKey'
+    }
+    It 'Usa una Automation Variable cifrata per il client secret' {
+        $script:runbookText | Should -Match 'Get-AutomationVariable -Name \$SecretVariableName'
+        $script:runbookText | Should -Match 'ClientSecretCredential'
+        $script:runbookText | Should -Match '\$clientSecret = \$null'
+    }
+}
+
+Describe 'Assegnazione permission Graph alla managed identity' {
+    BeforeAll { $script:grantText = Get-Content $script:grant -Raw }
+
+    It 'Documenta device code e tenant negli esempi' {
+        $script:grantText | Should -Match "ManagedIdentityPrincipalId.*-TenantId.*-UseDeviceCode"
+    }
+
+    It 'Interrompe lo script se la prima chiamata Graph fallisce' {
+        $script:grantText | Should -Match "Get-MgServicePrincipal -Filter .* -ErrorAction Stop"
+    }
+}
+
+Describe 'Template richiesta permission Entra' {
+    BeforeAll { $script:mailText = Get-Content $script:mailTemplate -Raw }
+    It 'E una bozza EML con mittente e destinatario modificabili' {
+        $script:mailText | Should -Match '^From: "MODIFICARE MITTENTE" <sender@example\.com>'
+        $script:mailText | Should -Match '(?m)^To: "MODIFICARE DESTINATARIO" <entra-admin@example\.com>'
+        $script:mailText | Should -Match '(?m)^X-Unsent: 1\r?$'
+    }
+
+    Describe 'Mail prerequisiti cliente' {
+        BeforeAll {
+            $script:prerequisitesMail = Join-Path $root 'docs\Customer-Deployment-Prerequisites.eml'
+            $script:prerequisitesMailText = Get-Content $script:prerequisitesMail -Raw
+        }
+
+        Describe 'Mail istruzioni deployment cliente' {
+            BeforeAll {
+                $script:instructionsMail = Join-Path $root 'docs\Customer-Deployment-Instructions.eml'
+                $script:instructionsMailText = Get-Content $script:instructionsMail -Raw
+            }
+            It 'È una bozza EML full-width modificabile' {
+                Test-Path $script:instructionsMail | Should -BeTrue
+                $script:instructionsMailText | Should -Match '(?m)^X-Unsent: 1\r?$'
+                $script:instructionsMailText | Should -Match 'multipart/alternative'
+                $script:instructionsMailText | Should -Match 'width="100%"'
+            }
+            It 'Documenta bootstrap, ruoli Azure e provider' {
+                $script:instructionsMailText | Should -Match 'Azure CLI'
+                $script:instructionsMailText | Should -Match 'Bicep'
+                $script:instructionsMailText | Should -Match 'Contributor'
+                $script:instructionsMailText | Should -Match 'providers/register/action'
+                $script:instructionsMailText | Should -Match 'Microsoft\.ManagedIdentity'
+            }
+            It 'Contiene i comandi per deployment, grant e attivazione' {
+                $script:instructionsMailText | Should -Match ([regex]::Escape(".\deploy.ps1 -ResourceGroupName '[RESOURCE GROUP]' -Location '[REGIONE]'"))
+                $script:instructionsMailText | Should -Match 'Grant-GraphPermissions\.ps1'
+                $script:instructionsMailText | Should -Match 'PermissionsConfirmed'
+                $script:instructionsMailText | Should -Match 'StartJobNow'
+            }
+            It 'Elenca ruolo Entra e tutte le permission Graph' {
+                $script:instructionsMailText | Should -Match 'Privileged Role Administrator'
+                foreach ($role in @(
+                    'DeviceManagementManagedDevices.Read.All',
+                    'BitlockerKey.Read.All',
+                    'Device.ReadWrite.All',
+                    'Group.Create',
+                    'GroupMember.ReadWrite.All'
+                )) {
+                    $script:instructionsMailText | Should -Match ([regex]::Escape($role))
+                }
+            }
+        }
+        It 'È una bozza EML modificabile con layout full-width' {
+            Test-Path $script:prerequisitesMail | Should -BeTrue
+            $script:prerequisitesMailText | Should -Match '(?m)^X-Unsent: 1\r?$'
+            $script:prerequisitesMailText | Should -Match 'multipart/alternative'
+            $script:prerequisitesMailText | Should -Match 'width="100%"'
+        }
+        It 'Documenta ruoli, provider e permission Graph richiesti' {
+            $script:prerequisitesMailText | Should -Match 'Contributor'
+            $script:prerequisitesMailText | Should -Match 'Privileged Role Administrator'
+            $script:prerequisitesMailText | Should -Match 'Microsoft\.Automation'
+            $script:prerequisitesMailText | Should -Match 'Microsoft\.ManagedIdentity'
+            $script:prerequisitesMailText | Should -Match 'DeviceManagementManagedDevices\.Read\.All'
+            $script:prerequisitesMailText | Should -Match 'GroupMember\.ReadWrite\.All'
+        }
+        It 'Avverte di non inviare credenziali via email' {
+            $script:prerequisitesMailText | Should -Match 'Non rispondere.*PFX'
+            $script:prerequisitesMailText | Should -Match 'canale sicuro'
+        }
+    }
+
+    Describe 'Template richiesta App Registration' {
+        BeforeAll {
+            $script:appMailTemplate = Join-Path $root 'templates\Entra-AppRegistration-Permissions-Request.eml'
+            $script:appMailText = Get-Content $script:appMailTemplate -Raw
+        }
+        It 'E una bozza EML full-width modificabile' {
+            $script:appMailText | Should -Match '^From: "MODIFICARE MITTENTE" <sender@example\.com>'
+            $script:appMailText | Should -Match '(?m)^To: "MODIFICARE DESTINATARIO" <entra-admin@example\.com>'
+            $script:appMailText | Should -Match '(?m)^X-Unsent: 1\r?$'
+            $script:appMailText | Should -Match 'width="100%"'
+        }
+        It 'Documenta il consenso dal portale Entra' {
+            $script:appMailText | Should -Match 'Registrazioni app'
+            $script:appMailText | Should -Match 'Autorizzazioni API'
+            $script:appMailText | Should -Match 'Concedi consenso amministratore'
+        }
+    }
+    It 'Contiene layout HTML full-width e fallback testuale' {
+        $script:mailText | Should -Match 'multipart/alternative'
+        $script:mailText | Should -Match 'width="100%"'
+        $script:mailText | Should -Match 'Content-Type: text/plain'
+        $script:mailText | Should -Match 'Content-Type: text/html'
+    }
+    It 'Elenca tutte le permission Graph richieste' {
+        foreach ($role in @(
+            'DeviceManagementManagedDevices.Read.All',
+            'BitlockerKey.Read.All',
+            'Device.ReadWrite.All',
+            'Group.Create',
+            'GroupMember.ReadWrite.All'
+        )) {
+            $script:mailText | Should -Match ([regex]::Escape($role))
+        }
     }
 }

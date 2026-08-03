@@ -15,6 +15,7 @@ PSScriptAnalyzerSettings.psd1.bak
 local.settings.json
 .env
 .env.*
+bicep/*.local.bicepparam
 
 # OS / editor
 .DS_Store

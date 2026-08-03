@@ -22,6 +22,7 @@ param runbookName string
 param alertEmails array
 
 @description('URL webhook (Teams/Logic App) a cui inoltrare gli alert. Vuoto = disabilitato.')
+@secure()
 param alertActionWebhookUrl string = ''
 
 @description('Abilita l\'alert sui job Failed/Suspended/Stopped.')
@@ -235,7 +236,7 @@ resource workbook 'Microsoft.Insights/workbooks@2023-06-01' = if (deployWorkbook
   kind: 'shared'
   properties: {
     displayName: 'Nimbus.BitLockerGroupSync - Monitoring'
-    serializedData: loadTextContent('workbooks/runbook-monitoring.workbook.json')
+    serializedData: replace(loadTextContent('workbooks/runbook-monitoring.workbook.json'), '__RUNBOOK_NAME__', runbookName)
     category: 'workbook'
     sourceId: logAnalyticsWorkspaceId
     version: '1.0'

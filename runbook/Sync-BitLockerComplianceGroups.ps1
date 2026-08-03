@@ -4,9 +4,9 @@
     di cifratura BitLocker dei device Intune e sulla presenza della recovery key in Entra.
 
 .DESCRIPTION
-    Runbook di Azure Automation (PowerShell 7.2) pensato per essere eseguito con la
-    system-assigned managed identity dell'Automation Account (autenticazione app-only a
-    Microsoft Graph, nessun segreto).
+    Runbook di Azure Automation (PowerShell 7.2) pensato per essere eseguito con
+    una user-assigned managed identity dedicata collegata all'Automation Account
+    (autenticazione app-only a Microsoft Graph, nessun segreto).
 
     Per ogni device Windows gestito da Intune valuta due condizioni:
       1. isEncrypted        -> disco cifrato (BitLocker attivo).
@@ -96,9 +96,30 @@ param(
     [Parameter()]
     [bool]$WhatIfOnly = $false,
 
-    # Client id di una user-assigned managed identity (facoltativo). Se vuoto usa la system-assigned.
+    # Modalita di autenticazione Microsoft Graph.
     [Parameter()]
-    [string]$UserAssignedClientId = '',
+    [ValidateSet('ManagedIdentity', 'AppRegistrationCertificate', 'AppRegistrationSecret')]
+    [string]$AuthenticationMode = 'ManagedIdentity',
+
+    # Client id della UAMI dedicata collegata all'Automation Account.
+    [Parameter()]
+    [Alias('UserAssignedClientId')]
+    [string]$ManagedIdentityClientId = '',
+
+    # Tenant e client id dell'App Registration.
+    [Parameter()]
+    [string]$AppTenantId = '',
+
+    [Parameter()]
+    [string]$AppClientId = '',
+
+    # Nome dell'Automation Certificate contenente il PFX con private key.
+    [Parameter()]
+    [string]$CertificateAssetName = 'NimbusGraphAuth',
+
+    # Nome dell'Automation Variable cifrata contenente il client secret.
+    [Parameter()]
+    [string]$ClientSecretVariableName = 'NimbusGraphClientSecret',
 
     # Soglia di device cifrati SENZA recovery key oltre la quale inviare un alert. 0 = disabilitato.
     [Parameter()]
@@ -110,7 +131,11 @@ param(
 
     # URL webhook di NOTIFICA: se valorizzato riceve il riepilogo a OGNI run. Fallback: Automation variable 'BitLockerSyncNotifyWebhook'.
     [Parameter()]
-    [string]$NotifyWebhookUrl = ''
+    [string]$NotifyWebhookUrl = '',
+
+    # Registra un evento strutturato per ogni device aggiunto con successo a un gruppo.
+    [Parameter()]
+    [string]$EnableMembershipDetailLogging = 'true'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -140,20 +165,66 @@ function ConvertTo-Bool {
 }
 
 function Connect-GraphSession {
-    param([string]$ClientId)
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute(
+        'PSAvoidUsingConvertToSecureStringWithPlainText',
+        '',
+        Justification = 'Il valore proviene da una Automation Variable cifrata e deve essere convertito nel PSCredential richiesto da Connect-MgGraph.'
+    )]
+    param(
+        [Parameter(Mandatory)]
+        [ValidateSet('ManagedIdentity', 'AppRegistrationCertificate', 'AppRegistrationSecret')]
+        [string]$Mode,
+        [string]$ManagedIdentityClientId,
+        [string]$TenantId,
+        [string]$ApplicationClientId,
+        [string]$CertificateName,
+        [string]$SecretVariableName
+    )
 
     if (-not (Get-Module -ListAvailable -Name Microsoft.Graph.Authentication)) {
         throw "Modulo 'Microsoft.Graph.Authentication' non disponibile nell'Automation Account."
     }
     Import-Module Microsoft.Graph.Authentication -ErrorAction Stop
 
-    if ([string]::IsNullOrWhiteSpace($ClientId)) {
-        Write-Log 'Connessione a Graph con la system-assigned managed identity...'
-        Connect-MgGraph -Identity -NoWelcome
-    }
-    else {
-        Write-Log "Connessione a Graph con la user-assigned managed identity ($ClientId)..."
-        Connect-MgGraph -Identity -ClientId $ClientId -NoWelcome
+    switch ($Mode) {
+        'ManagedIdentity' {
+            if ([string]::IsNullOrWhiteSpace($ManagedIdentityClientId)) {
+                throw 'ManagedIdentityClientId e obbligatorio: il runbook richiede la UAMI dedicata.'
+            }
+            Write-Log "Connessione a Graph con la user-assigned managed identity dedicata ($ManagedIdentityClientId)..."
+            Connect-MgGraph -Identity -ClientId $ManagedIdentityClientId -NoWelcome
+        }
+        'AppRegistrationCertificate' {
+            if ([string]::IsNullOrWhiteSpace($TenantId) -or [string]::IsNullOrWhiteSpace($ApplicationClientId)) {
+                throw 'AppTenantId e AppClientId sono obbligatori per AppRegistrationCertificate.'
+            }
+            $certificate = Get-AutomationCertificate -Name $CertificateName -ErrorAction Stop
+            if (-not $certificate.HasPrivateKey) {
+                throw "L'Automation Certificate '$CertificateName' non contiene la private key."
+            }
+            Write-Log "Connessione a Graph con App Registration e certificato '$CertificateName'..."
+            Connect-MgGraph -TenantId $TenantId -ClientId $ApplicationClientId -Certificate $certificate -NoWelcome
+        }
+        'AppRegistrationSecret' {
+            if ([string]::IsNullOrWhiteSpace($TenantId) -or [string]::IsNullOrWhiteSpace($ApplicationClientId)) {
+                throw 'AppTenantId e AppClientId sono obbligatori per AppRegistrationSecret.'
+            }
+            $clientSecret = Get-AutomationVariable -Name $SecretVariableName -ErrorAction Stop
+            if ([string]::IsNullOrWhiteSpace([string]$clientSecret)) {
+                throw "Automation Variable '$SecretVariableName' vuota o non disponibile."
+            }
+            try {
+                $secureSecret = ConvertTo-SecureString -String ([string]$clientSecret) -AsPlainText -Force
+                $credential = [pscredential]::new($ApplicationClientId, $secureSecret)
+                Write-Log "Connessione a Graph con App Registration e client secret cifrato '$SecretVariableName'..."
+                Connect-MgGraph -TenantId $TenantId -ClientSecretCredential $credential -NoWelcome
+            }
+            finally {
+                $clientSecret = $null
+                $secureSecret = $null
+                $credential = $null
+            }
+        }
     }
     $ctx = Get-MgContext
     if (-not $ctx) { throw 'Connessione a Microsoft Graph fallita.' }
@@ -302,7 +373,9 @@ function Sync-GroupMembership {
     param(
         [Parameter(Mandatory)][string]$GroupId,
         [Parameter(Mandatory)][string]$GroupName,
-        [Parameter(Mandatory)][AllowEmptyCollection()][string[]]$DesiredObjectIds
+        [Parameter(Mandatory)][AllowEmptyCollection()][string[]]$DesiredObjectIds,
+        [Parameter()][hashtable]$DeviceNamesByObjectId = @{},
+        [Parameter()][bool]$LogMembershipDetails = $true
     )
 
     if ([string]::IsNullOrWhiteSpace($GroupId)) {
@@ -336,6 +409,17 @@ function Sync-GroupMembership {
             try {
                 Invoke-GraphApi -Uri "groups/$GroupId" -Method PATCH -Body $body | Out-Null
                 $done = $true
+                if ($LogMembershipDetails) {
+                    foreach ($id in $slice) {
+                        $deviceName = if ($DeviceNamesByObjectId.ContainsKey($id)) { $DeviceNamesByObjectId[$id] } else { $id }
+                        $eventData = [ordered]@{
+                            groupName = $GroupName
+                            deviceName = $deviceName
+                            objectId = $id
+                        } | ConvertTo-Json -Compress
+                        Write-Log "[MEMBERSHIP_ADD] $eventData" 'OK'
+                    }
+                }
             }
             catch {
                 if ($attempt -ge 4) {
@@ -399,7 +483,13 @@ try {
     Write-Log '=== Nimbus.BitLockerGroupSync - avvio ==='
     if ($WhatIfOnly) { Write-Log 'Modalita WhatIf attiva: nessuna modifica verra applicata.' 'WARN' }
 
-    Connect-GraphSession -ClientId $UserAssignedClientId
+    Connect-GraphSession `
+        -Mode $AuthenticationMode `
+        -ManagedIdentityClientId $ManagedIdentityClientId `
+        -TenantId $AppTenantId `
+        -ApplicationClientId $AppClientId `
+        -CertificateName $CertificateAssetName `
+        -SecretVariableName $ClientSecretVariableName
 
     # Nomi effettivi dei gruppi: se non specificati, derivati da GroupPrefix.
     if ([string]::IsNullOrWhiteSpace($EncryptedGroupName))    { $EncryptedGroupName    = "$GroupPrefix-Encrypted" }
@@ -412,6 +502,7 @@ try {
     $escrowCheck     = ConvertTo-Bool $EnableKeyEscrowCheck
     $useKeyEscrowed  = ConvertTo-Bool $EnableKeyEscrowedGroup
     $useKeyMissing   = ConvertTo-Bool $EnableKeyMissingGroup
+    $logMembershipDetails = ConvertTo-Bool $EnableMembershipDetailLogging
 
     # Master switch: se la verifica escrow e' disabilitata, i gruppi/alert che dipendono
     # dalle recovery key vengono neutralizzati (con warning se erano stati richiesti).
@@ -472,9 +563,16 @@ try {
 
     # 4) Mappa deviceId (Entra) -> objectId del device Entra
     Write-Log 'Costruzione mappa device Entra (deviceId -> objectId)...'
-    $entraDevices = (Invoke-GraphApi -Uri "devices?`$select=id,deviceId" -All).Value
+    $entraDevices = (Invoke-GraphApi -Uri "devices?`$select=id,deviceId,displayName" -All).Value
     $deviceIdToObjectId = @{}
-    foreach ($d in $entraDevices) { if ($d.deviceId) { $deviceIdToObjectId[[string]$d.deviceId] = [string]$d.id } }
+    $deviceNamesByObjectId = @{}
+    foreach ($d in $entraDevices) {
+        if ($d.deviceId) {
+            $objectId = [string]$d.id
+            $deviceIdToObjectId[[string]$d.deviceId] = $objectId
+            $deviceNamesByObjectId[$objectId] = if ([string]::IsNullOrWhiteSpace([string]$d.displayName)) { $objectId } else { [string]$d.displayName }
+        }
+    }
     Write-Log "Mappati $($deviceIdToObjectId.Count) device Entra."
 
     # 5) Calcolo insiemi desiderati
@@ -499,15 +597,15 @@ try {
     if ($unresolved -gt 0) { Write-Log "$unresolved device Intune senza corrispondente oggetto Entra (ignorati)." 'WARN' }
 
     # 6) Riconciliazione membership (solo gruppi abilitati)
-    Sync-GroupMembership -GroupId $groupIds.Encrypted -GroupName $EncryptedGroupName -DesiredObjectIds $desired.Encrypted.ToArray()
+    Sync-GroupMembership -GroupId $groupIds.Encrypted -GroupName $EncryptedGroupName -DesiredObjectIds $desired.Encrypted.ToArray() -DeviceNamesByObjectId $deviceNamesByObjectId -LogMembershipDetails $logMembershipDetails
     if ($useNotEncrypted) {
-        Sync-GroupMembership -GroupId $groupIds.NotEncrypted -GroupName $NotEncryptedGroupName -DesiredObjectIds $desired.NotEncrypted.ToArray()
+        Sync-GroupMembership -GroupId $groupIds.NotEncrypted -GroupName $NotEncryptedGroupName -DesiredObjectIds $desired.NotEncrypted.ToArray() -DeviceNamesByObjectId $deviceNamesByObjectId -LogMembershipDetails $logMembershipDetails
     }
     if ($useKeyEscrowed) {
-        Sync-GroupMembership -GroupId $groupIds.KeyEscrowed -GroupName $KeyEscrowedGroupName -DesiredObjectIds $desired.KeyEscrowed.ToArray()
+        Sync-GroupMembership -GroupId $groupIds.KeyEscrowed -GroupName $KeyEscrowedGroupName -DesiredObjectIds $desired.KeyEscrowed.ToArray() -DeviceNamesByObjectId $deviceNamesByObjectId -LogMembershipDetails $logMembershipDetails
     }
     if ($useKeyMissing) {
-        Sync-GroupMembership -GroupId $groupIds.KeyMissing -GroupName $KeyMissingGroupName -DesiredObjectIds $desired.KeyMissing.ToArray()
+        Sync-GroupMembership -GroupId $groupIds.KeyMissing -GroupName $KeyMissingGroupName -DesiredObjectIds $desired.KeyMissing.ToArray() -DeviceNamesByObjectId $deviceNamesByObjectId -LogMembershipDetails $logMembershipDetails
     }
 
     $summary['DeviceValutati'] = $deviceMap.Count

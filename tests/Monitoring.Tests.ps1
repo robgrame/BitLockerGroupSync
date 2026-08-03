@@ -56,6 +56,9 @@ Describe 'Modulo monitoring.bicep' {
         $script:text | Should -Match "Microsoft\.Insights/workbooks"
         $script:text | Should -Match "loadTextContent\('workbooks/runbook-monitoring.workbook.json'\)"
     }
+    It 'Inietta nel workbook il nome parametrico del runbook' {
+        $script:text | Should -Match "replace\(loadTextContent\('workbooks/runbook-monitoring.workbook.json'\), '__RUNBOOK_NAME__', runbookName\)"
+    }
     It 'Le email ricevitori usano il common alert schema' {
         $script:text | Should -Match 'useCommonAlertSchema: true'
     }
@@ -94,6 +97,7 @@ Describe 'Wiring in main.bicep' {
 
     It 'Espone il parametro <Name>' -ForEach @(
         @{ Name = 'deployMonitoring' }
+        @{ Name = 'logAnalyticsWorkspaceName' }
         @{ Name = 'alertEmails' }
         @{ Name = 'enableFailedAlert' }
         @{ Name = 'enableErrorAlert' }
@@ -104,20 +108,60 @@ Describe 'Wiring in main.bicep' {
         @{ Name = 'teamsLogicAppName' }
         @{ Name = 'teamsWebhookUrl' }
         @{ Name = 'enableKeyEscrowCheck' }
+        @{ Name = 'enableMembershipDetailLogging' }
+        @{ Name = 'enableSchedule' }
+        @{ Name = 'authenticationMode' }
+        @{ Name = 'managedIdentityName' }
+        @{ Name = 'appTenantId' }
+        @{ Name = 'appClientId' }
+        @{ Name = 'certificateAssetName' }
+        @{ Name = 'graphCredentialVariableName' }
+        @{ Name = 'appClientSecret' }
     ) {
         $script:text | Should -Match "param $Name "
     }
     It 'Passa EnableKeyEscrowCheck alla jobSchedule' {
         $script:text | Should -Match 'EnableKeyEscrowCheck: string\(enableKeyEscrowCheck\)'
     }
-    It 'Invoca il modulo monitoring gated da deployLogAnalytics' {
-        $script:text | Should -Match "module monitoring 'monitoring.bicep' = if \(deployMonitoring && deployLogAnalytics\)"
+    It 'Invoca il monitoraggio solo quando Log Analytics e attivo' {
+        $script:text | Should -Match "module monitoring 'monitoring.bicep' = if \(deployMonitoring && deployLogAnalytics && !deployTeamsLogicApp\)"
+        $script:text | Should -Match "module monitoringWithTeams 'monitoring.bicep' = if \(deployMonitoring && deployLogAnalytics && deployTeamsLogicApp\)"
+    }
+    It 'Usa un nome workspace indipendente dall Automation Account' {
+        $script:text | Should -Match 'name: logAnalyticsWorkspaceName'
     }
     It 'Invoca la Logic App Teams gated da deployTeamsLogicApp' {
         $script:text | Should -Match "module teamsLogicApp 'teams-logicapp.bicep' = if \(deployMonitoring && deployTeamsLogicApp\)"
     }
     It 'Collega automaticamente il callback della Logic App all Action Group' {
-        $script:text | Should -Match 'teamsLogicApp!\.outputs\.triggerUrl'
+        $script:text | Should -Match '#disable-next-line BCP318'
+        $script:text | Should -Match 'teamsLogicApp\.outputs\.triggerUrl'
+    }
+    It 'Passa EnableMembershipDetailLogging alla jobSchedule' {
+        $script:text | Should -Match 'EnableMembershipDetailLogging: string\(enableMembershipDetailLogging\)'
+    }
+    It 'Crea schedule e jobSchedule solo quando il runtime e abilitato' {
+        $script:text | Should -Match "resource schedule .* = if \(enableSchedule\)"
+        $script:text | Should -Match "resource jobSchedule .* = if \(enableSchedule\)"
+    }
+    It 'Crea e collega una UAMI dedicata all Automation Account' {
+        $script:text | Should -Match "Microsoft\.ManagedIdentity/userAssignedIdentities@2024-11-30"
+        $script:text | Should -Match "type: 'UserAssigned'"
+        $script:text | Should -Match 'userAssignedIdentities:'
+        $script:text | Should -Match 'runtimeIdentity!\.properties\.clientId'
+        $script:text | Should -Not -Match "'SystemAssigned, UserAssigned'"
+    }
+    It 'Passa solo riferimenti non segreti alla schedule' {
+        $script:text | Should -Match 'AuthenticationMode: authenticationMode'
+        $script:text | Should -Match 'CertificateAssetName: certificateAssetName'
+        $script:text | Should -Match 'ClientSecretVariableName: graphCredentialVariableName'
+        $runtimeParams = [regex]::Match($script:text, 'var runbookParameters = \{(?<body>[\s\S]*?)\r?\n\}')
+        $runtimeParams.Success | Should -BeTrue
+        $runtimeParams.Groups['body'].Value | Should -Not -Match 'appClientSecret'
+    }
+    It 'Salva il client secret in una Automation Variable cifrata' {
+        $script:text | Should -Match "authenticationMode == 'AppRegistrationSecret'"
+        $script:text | Should -Match 'isEncrypted: true'
     }
 }
 
@@ -131,5 +175,11 @@ Describe 'Workbook JSON' {
         $json = $script:raw | ConvertFrom-Json
         $json.items | Should -Not -BeNullOrEmpty
         $script:raw | Should -Match 'RunbookName_s'
+        $script:raw | Should -Match '__RUNBOOK_NAME__'
+    }
+    It 'Contiene la vista dei device aggiunti ai gruppi' {
+        $script:raw | Should -Match '\[MEMBERSHIP_ADD\]'
+        $script:raw | Should -Match 'membership-add-details'
+        $script:raw | Should -Match 'Payload\.deviceName'
     }
 }

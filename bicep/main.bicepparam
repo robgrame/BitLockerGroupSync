@@ -6,6 +6,7 @@ using './main.bicep'
 
 param location = 'italynorth'
 param automationAccountName = 'aa-bitlocker-groupsync'
+param logAnalyticsWorkspaceName = 'aa-bitlocker-groupsync-law'
 param runbookName = 'Sync-BitLockerComplianceGroups'
 
 // URL raw del runbook nel repo pubblico (branch main).
@@ -30,13 +31,23 @@ param enableKeyMissingGroup = true
 param enableKeyEscrowCheck = true
 
 param targetOperatingSystem = 'Windows'
+
+// Autenticazione Graph:
+// ManagedIdentity | AppRegistrationCertificate | AppRegistrationSecret
+param authenticationMode = 'ManagedIdentity'
+param managedIdentityName = 'id-bitlocker-groupsync'
+param appTenantId = ''
+param appClientId = ''
+param certificateAssetName = 'NimbusGraphAuth'
+param graphCredentialVariableName = 'NimbusGraphClientSecret'
+param appClientSecret = ''
+
 param scheduleIntervalHours = 6
 param deployLogAnalytics = true
 
 // Monitoraggio nativo Azure (Action Group + alert rules + workbook).
 param deployMonitoring = true
 param alertEmails = [
-  'roberto@gramellini.net'
 ]
 param alertActionWebhookUrl = '' // valorizzare con l'URL del canale Teams / Logic App
 param enableFailedAlert = true
@@ -46,12 +57,13 @@ param deadmanWindowHours = 12
 param deployWorkbook = true
 
 // Logic App di notifica Teams.
-param deployTeamsLogicApp = true
+param deployTeamsLogicApp = false
 param teamsLogicAppName = 'logic-bitlocker-teams'
 param teamsWebhookUrl = '' // incollare qui l'URL Workflows del canale Teams
 
 // Ottimizzazioni opzionali
 param keyMissingAlertThreshold = 0
+param enableMembershipDetailLogging = true
 
 // Webhook (secure): lasciare vuoti per non creare le variabili. Valorizzare per abilitarli.
 param alertWebhookUrl = ''

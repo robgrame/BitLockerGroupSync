@@ -255,5 +255,7 @@ Describe 'Workbook JSON' {
         $script:raw | Should -Match 'Operazione'
         $script:raw | Should -Match 'Aggiunta'
         $script:raw | Should -Match 'Rimozione'
+        $script:raw | Should -Match 'RawOperation'
+        $script:raw | Should -Match 'ResultDescription contains'
     }
 }

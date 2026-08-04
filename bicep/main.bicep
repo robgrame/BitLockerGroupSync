@@ -206,14 +206,15 @@ resource automationAccount 'Microsoft.Automation/automationAccounts@2023-11-01' 
   name: automationAccountName
   location: location
   tags: tags
+  // Il provider Automation interpreta identity.type=None come rimozione di
+  // un'identita e fallisce se l'account non esiste ancora. In modalita App
+  // Registration la proprieta identity deve quindi essere omessa del tutto.
   identity: authenticationMode == 'ManagedIdentity' ? {
     type: 'UserAssigned'
     userAssignedIdentities: {
       '${runtimeIdentity!.id}': {}
     }
-  } : {
-    type: 'None'
-  }
+  } : null
   properties: {
     sku: {
       name: 'Basic'

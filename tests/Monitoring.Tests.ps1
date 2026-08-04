@@ -202,6 +202,11 @@ Describe 'Wiring in main.bicep' {
         $script:text | Should -Match 'runtimeIdentity!\.properties\.clientId'
         $script:text | Should -Not -Match "'SystemAssigned, UserAssigned'"
     }
+    It 'Omette identity dall Automation Account quando usa App Registration' {
+        $script:text | Should -Match "identity: authenticationMode == 'ManagedIdentity' \? \{"
+        $script:text | Should -Match '\}\s*:\s*null'
+        $script:text | Should -Not -Match "type: 'None'"
+    }
     It 'Passa solo riferimenti non segreti alla schedule' {
         $script:text | Should -Match 'AuthenticationMode: authenticationMode'
         $script:text | Should -Match 'CertificateAssetName: certificateAssetName'

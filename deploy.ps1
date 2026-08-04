@@ -42,6 +42,10 @@
     primo deployment con AppRegistrationSecret; viene archiviato in una
     Automation Variable cifrata e non viene inserito nella schedule.
 
+.PARAMETER TeamsWebhookUrl
+    URL Workflows del canale Teams come SecureString. Viene passato direttamente
+    al deployment e non deve essere persistito nel file dei parametri.
+
 .PARAMETER SkipBootstrap
     Evita installazione e aggiornamento automatici di Azure CLI, Bicep e moduli
     PowerShell. Usare solo quando tutti i prerequisiti sono gia disponibili.
@@ -110,6 +114,7 @@ param(
     [Parameter()][string]$AppCertificatePfxPath,
     [Parameter()][securestring]$AppCertificatePfxPassword,
     [Parameter()][securestring]$AppClientSecret,
+    [Parameter()][securestring]$TeamsWebhookUrl,
     [Parameter()][switch]$SkipBootstrap,
     [Parameter()][switch]$SkipProviderRegistration,
     [Parameter()][switch]$GrantGraphPermissions,
@@ -540,6 +545,7 @@ $templateParams = @{
     enableDeadmanAlert    = $runtimeEnabled
 }
 if ($AppClientSecret) { $templateParams.appClientSecret = $AppClientSecret }
+if ($TeamsWebhookUrl) { $templateParams.teamsWebhookUrl = $TeamsWebhookUrl }
 
 Write-Host '==> Preflight ARM/Bicep...' -ForegroundColor Cyan
 $validationErrors = @(Test-AzResourceGroupDeployment @templateParams)

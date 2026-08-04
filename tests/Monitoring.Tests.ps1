@@ -115,6 +115,16 @@ Describe 'Modulo teams-logicapp.bicep' {
         $script:text | Should -Match ([regex]::Escape('application/vnd.microsoft.card.adaptive'))
         $script:text | Should -Match "type: 'AdaptiveCard'"
     }
+    It 'Distingue notifiche runbook e alert Azure Monitor' {
+        $script:text | Should -Match 'Post_Runbook_Notification'
+        $script:text | Should -Match 'Post_Azure_Monitor_Alert'
+        $script:text | Should -Match 'Nimbus\.BitLockerGroupSync'
+        $script:text | Should -Match 'changeText'
+        $script:text | Should -Match "triggerBody\(\)\?\[\\'data\\'\]\?\[\\'essentials\\'\]"
+    }
+    It 'Tratta l URL Teams come parametro sicuro del workflow' {
+        $script:text | Should -Match "type: 'SecureString'"
+    }
     It 'Esporta il callback URL del trigger' {
         $script:text | Should -Match "listCallbackUrl\("
         $script:text | Should -Match 'output triggerUrl string'
@@ -141,6 +151,7 @@ Describe 'Wiring in main.bicep' {
         @{ Name = 'teamsWebhookUrl' }
         @{ Name = 'enableKeyEscrowCheck' }
         @{ Name = 'enableMembershipDetailLogging' }
+        @{ Name = 'notificationDetailLimit' }
         @{ Name = 'enableSchedule' }
         @{ Name = 'authenticationMode' }
         @{ Name = 'managedIdentityName' }
@@ -163,7 +174,7 @@ Describe 'Wiring in main.bicep' {
         $script:text | Should -Match 'name: logAnalyticsWorkspaceName'
     }
     It 'Invoca la Logic App Teams gated da deployTeamsLogicApp' {
-        $script:text | Should -Match "module teamsLogicApp 'teams-logicapp.bicep' = if \(deployMonitoring && deployTeamsLogicApp\)"
+        $script:text | Should -Match "module teamsLogicApp 'teams-logicapp.bicep' = if \(deployTeamsLogicApp\)"
     }
     It 'Collega automaticamente il callback della Logic App all Action Group' {
         $script:text | Should -Match '#disable-next-line BCP318'
@@ -171,6 +182,11 @@ Describe 'Wiring in main.bicep' {
     }
     It 'Passa EnableMembershipDetailLogging alla jobSchedule' {
         $script:text | Should -Match 'EnableMembershipDetailLogging: string\(enableMembershipDetailLogging\)'
+    }
+    It 'Collega automaticamente il callback della Logic App al notify webhook cifrato' {
+        $script:text | Should -Match "name: 'BitLockerSyncNotifyWebhook'"
+        $script:text | Should -Match 'deployTeamsLogicApp \? .*teamsLogicApp\.outputs\.triggerUrl'
+        $script:text | Should -Match 'NotificationDetailLimit: string\(notificationDetailLimit\)'
     }
     It 'Crea schedule e jobSchedule solo quando il runtime e abilitato' {
         $script:text | Should -Match "resource schedule .* = if \(enableSchedule\)"

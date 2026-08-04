@@ -217,7 +217,8 @@ pwsh ./scripts/Grant-GraphPermissions.ps1 -ManagedIdentityPrincipalId <principal
 | `ManagedIdentityClientId` | *(fornito dal deployment)* | Client ID della UAMI dedicata |
 | `KeyMissingAlertThreshold` | `0` | Soglia device cifrati senza key oltre cui inviare alert (0 = off) |
 | `AlertWebhookUrl` | *(vuoto)* | Webhook per l'alert soglia (fallback: variable `BitLockerSyncAlertWebhook`) |
-| `NotifyWebhookUrl` | *(vuoto)* | Webhook di notifica a ogni run (fallback: variable `BitLockerSyncNotifyWebhook`) |
+| `NotifyWebhookUrl` | *(vuoto)* | Webhook di notifica quando cambiano membership o si verificano errori (fallback: variable `BitLockerSyncNotifyWebhook`) |
+| `NotificationDetailLimit` | `50` | Numero massimo di modifiche membership incluse nel payload (0-200) |
 | `EnableMembershipDetailLogging` | `true` | Registra nome e object ID di ogni device aggiunto con successo, per la vista di dettaglio del workbook |
 
 ---
@@ -228,7 +229,7 @@ La soluzione supporta **tre** meccanismi (tutti opzionali):
 
 | Tipo | Direzione | Scopo |
 |---|---|---|
-| 📣 **Notify webhook** | outbound | A **ogni run** invia il riepilogo JSON (`sync.completed`) ai subscriber (Teams/Logic App/SIEM) |
+| 📣 **Notify webhook** | outbound | Quando cambiano membership o si verificano errori invia conteggi e device interessati (`sync.membership_changed`) |
 | 🚨 **Alert webhook** | outbound | Invia un alert solo quando `KeyMissing ≥ KeyMissingAlertThreshold` |
 | ▶️ **Trigger webhook** | inbound | URL HTTP `POST` per **avviare** una sync on-demand |
 
@@ -243,12 +244,28 @@ Il **trigger webhook** si crea con:
 # L'URI viene mostrato UNA SOLA VOLTA: salvalo subito.
 ```
 
+Il dettaglio viene limitato da `NotificationDetailLimit`; `changesTruncated` indica
+quante modifiche ulteriori non sono incluse. Se non ci sono modifiche né errori, il
+webhook non viene chiamato.
+
 Esempio payload di notifica:
 
 ```json
 {
   "solution": "Nimbus.BitLockerGroupSync",
-  "event": "sync.completed",
+  "event": "sync.membership_changed",
+  "added": 2,
+  "removed": 1,
+  "changeCount": 3,
+  "changes": [
+    {
+      "operation": "Add",
+      "groupName": "Intune - BitLocker Encrypted",
+      "deviceName": "PC-001",
+      "objectId": "00000000-0000-0000-0000-000000000000"
+    }
+  ],
+  "changesTruncated": 0,
   "encrypted": 812, "notEncrypted": 14,
   "keyEscrowed": 799, "keyMissing": 13,
   "timestamp": "2026-07-24T17:05:00.000Z"
@@ -303,18 +320,20 @@ quando si vuole ridurre il volume dei JobStreams.
 
 ### 💬 Notifiche Teams (Logic App)
 
-Una **Logic App (Consumption)** opzionale (`deployTeamsLogicApp`) fa da *traduttore* tra
-l'Action Group e Teams: riceve il *common alert schema*, lo formatta in una **Adaptive Card**
-e la posta al canale.
+Una **Logic App (Consumption)** opzionale (`deployTeamsLogicApp`) fa da *traduttore* verso
+Teams. Riceve sia il *common alert schema* dall'Action Group sia il payload delle modifiche
+membership dal runbook, seleziona la card appropriata e la posta al canale.
 
 ```mermaid
 flowchart LR
     AG["📢 Action Group"] -->|common alert schema| LA["⚙️ Logic App<br/>logic-bitlocker-teams"]
+    RB["📜 Runbook"] -->|membership changes| LA
     LA -->|Adaptive Card| TEAMS["💬 Canale Teams"]
 ```
 
-- Il wiring **Action Group → Logic App** è automatico (`listCallbackUrl` → `serviceUri` del
-  webhook): non serve incollare URL manualmente.
+- Il wiring **Action Group/Runbook → Logic App** è automatico: lo stesso callback firmato viene
+  collegato all'Action Group e salvato nella Automation variable cifrata
+  `BitLockerSyncNotifyWebhook`.
 - L'unico valore da fornire è l'**URL di destinazione Teams** (`teamsWebhookUrl`), di tipo
   **Workflows / Power Automate** (in Teams: canale → *…* → **Workflows** → *"Post to a channel
   when a webhook request is received"*).
@@ -345,17 +364,22 @@ flowchart LR
 5. Completa la creazione: il flusso mostra un **URL HTTP POST** — è quello di `teamsWebhookUrl`.
    Copialo subito (puoi comunque recuperarlo riaprendo il flusso in Power Automate → trigger
    *“When a Teams webhook request is received”*).
-6. Incolla l'URL in [`bicep/main.bicepparam`](bicep/main.bicepparam):
+6. Non salvare l'URL nel repository. Acquisiscilo come `SecureString`:
 
-   ```bicep
-   param deployTeamsLogicApp = true
-   param teamsWebhookUrl = 'https://prod-XX.westeurope.logic.azure.com:443/workflows/.../triggers/manual/paths/invoke?...&sig=...'
+   ```powershell
+   $TeamsWebhookUrl = Read-Host 'URL Workflows del canale Teams' -AsSecureString
    ```
 
-7. Ridistribuisci lo stack (solo la Logic App viene aggiornata, il resto è idempotente):
+7. Ridistribuisci lo stack passando il valore protetto:
 
-   ```bash
-   az deployment group create -g RG-BLKGM -f bicep/main.bicep -p bicep/main.bicepparam
+   ```powershell
+   .\deploy.ps1 `
+     -ResourceGroupName 'RG-ENCRYPTED_DEVICES' `
+     -Location 'italynorth' `
+     -ParameterFile '.\bicep\main.bicepparam' `
+     -SkipBootstrap `
+     -PermissionsConfirmed `
+     -TeamsWebhookUrl $TeamsWebhookUrl
    ```
 
 > [!TIP]

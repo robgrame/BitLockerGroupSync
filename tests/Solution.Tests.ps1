@@ -68,6 +68,7 @@ Describe 'Parametri del runbook' {
         @{ Name = 'KeyMissingAlertThreshold' }
         @{ Name = 'AlertWebhookUrl' }
         @{ Name = 'NotifyWebhookUrl' }
+        @{ Name = 'NotificationDetailLimit' }
         @{ Name = 'EnableMembershipDetailLogging' }
     ) {
         $script:paramNames | Should -Contain $Name
@@ -147,6 +148,14 @@ Describe 'Logica di batching' {
         $script:runbookText | Should -Match "operation = 'Remove'"
         $script:runbookText | Should -Match 'MembershipAdds'
         $script:runbookText | Should -Match 'MembershipRemoves'
+    }
+    It 'Notifica solo modifiche membership o errori con dettaglio limitato' {
+        $script:runbookText | Should -Match '\$script:MembershipChanges'
+        $script:runbookText | Should -Match '\$script:MembershipChanges\.Count -lt \$NotificationDetailLimit'
+        $script:runbookText | Should -Match '\$shouldNotify\s*=\s*\$membershipChangeCount -gt 0 -or \$script:ReconcileErrors -gt 0'
+        $script:runbookText | Should -Match 'changesTruncated'
+        $script:runbookText | Should -Match 'sync\.membership_changed_with_errors'
+        $script:runbookText | Should -Match 'sync\.membership_changed'
         $script:runbookText | Should -Match 'deviceName'
         $script:runbookText | Should -Match 'LogMembershipDetails'
     }
@@ -163,6 +172,10 @@ Describe 'Orchestrazione del deployment' {
         $script:deployText | Should -Match 'Test-AzResourceGroupDeployment'
         $script:deployText | Should -Match 'Get-AzResourceGroupDeploymentWhatIfResult'
         $script:deployText | Should -Match 'New-AzResourceGroupDeployment'
+    }
+    It 'Accetta il webhook Teams come SecureString senza persisterlo' {
+        $script:deployText | Should -Match '\[securestring\]\$TeamsWebhookUrl'
+        $script:deployText | Should -Match '\$templateParams\.teamsWebhookUrl = \$TeamsWebhookUrl'
     }
     It 'Riusa i parametri runtime per avvio immediato e webhook' {
         $script:deployText | Should -Match 'Outputs\.runbookParameters'

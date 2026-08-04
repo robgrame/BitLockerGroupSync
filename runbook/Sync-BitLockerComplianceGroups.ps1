@@ -133,6 +133,11 @@ param(
     [Parameter()]
     [string]$NotifyWebhookUrl = '',
 
+    # Numero massimo di modifiche membership incluse nella notifica.
+    [Parameter()]
+    [ValidateRange(0, 200)]
+    [int]$NotificationDetailLimit = 50,
+
     # Registra un evento strutturato per ogni device aggiunto con successo a un gruppo.
     [Parameter()]
     [string]$EnableMembershipDetailLogging = 'true'
@@ -146,6 +151,7 @@ $script:GraphBase = 'https://graph.microsoft.com/v1.0'
 $script:ReconcileErrors = 0
 $script:MembershipAdds = 0
 $script:MembershipRemoves = 0
+$script:MembershipChanges = [System.Collections.Generic.List[object]]::new()
 
 #region Helper
 
@@ -417,15 +423,19 @@ function Sync-GroupMembership {
                 Invoke-GraphApi -Uri "groups/$GroupId" -Method PATCH -Body $body | Out-Null
                 $done = $true
                 $script:MembershipAdds += $slice.Count
-                if ($LogMembershipDetails) {
-                    foreach ($id in $slice) {
-                        $deviceName = if ($DeviceNamesByObjectId.ContainsKey($id)) { $DeviceNamesByObjectId[$id] } else { $id }
-                        $eventData = [ordered]@{
-                            operation = 'Add'
-                            groupName = $GroupName
-                            deviceName = $deviceName
-                            objectId = $id
-                        } | ConvertTo-Json -Compress
+                foreach ($id in $slice) {
+                    $deviceName = if ($DeviceNamesByObjectId.ContainsKey($id)) { $DeviceNamesByObjectId[$id] } else { $id }
+                    $change = [ordered]@{
+                        operation = 'Add'
+                        groupName = $GroupName
+                        deviceName = $deviceName
+                        objectId = $id
+                    }
+                    if ($script:MembershipChanges.Count -lt $NotificationDetailLimit) {
+                        [void]$script:MembershipChanges.Add($change)
+                    }
+                    if ($LogMembershipDetails) {
+                        $eventData = $change | ConvertTo-Json -Compress
                         Write-Log "[MEMBERSHIP_ADD] $eventData" 'OK'
                     }
                 }
@@ -450,16 +460,20 @@ function Sync-GroupMembership {
         }
         $removed = @(Invoke-GraphBatch -Requests @($reqs))
         $script:MembershipRemoves += $removed.Count
-        if ($LogMembershipDetails) {
-            foreach ($request in $removed) {
-                $id = [string]$request.objectId
-                $deviceName = if ($DeviceNamesByObjectId.ContainsKey($id)) { $DeviceNamesByObjectId[$id] } else { $id }
-                $eventData = [ordered]@{
-                    operation = 'Remove'
-                    groupName = $GroupName
-                    deviceName = $deviceName
-                    objectId = $id
-                } | ConvertTo-Json -Compress
+        foreach ($request in $removed) {
+            $id = [string]$request.objectId
+            $deviceName = if ($DeviceNamesByObjectId.ContainsKey($id)) { $DeviceNamesByObjectId[$id] } else { $id }
+            $change = [ordered]@{
+                operation = 'Remove'
+                groupName = $GroupName
+                deviceName = $deviceName
+                objectId = $id
+            }
+            if ($script:MembershipChanges.Count -lt $NotificationDetailLimit) {
+                [void]$script:MembershipChanges.Add($change)
+            }
+            if ($LogMembershipDetails) {
+                $eventData = $change | ConvertTo-Json -Compress
                 Write-Log "[MEMBERSHIP_REMOVE] $eventData" 'OK'
             }
         }
@@ -650,17 +664,35 @@ try {
     Write-Log '=== Riepilogo ===' 'OK'
     $summary.GetEnumerator() | ForEach-Object { Write-Log ("  {0}: {1}" -f $_.Key, $_.Value) 'OK' }
 
-    # 7a) Notifica di riepilogo a OGNI run (subscribers via webhook)
+    # 7a) Notifica solo quando la riconciliazione modifica membership o rileva errori.
     $notifyHook = $NotifyWebhookUrl
     if ([string]::IsNullOrWhiteSpace($notifyHook)) {
         try { $notifyHook = Get-AutomationVariable -Name 'BitLockerSyncNotifyWebhook' -ErrorAction Stop } catch { $notifyHook = '' }
     }
-    if (-not [string]::IsNullOrWhiteSpace($notifyHook) -and -not $WhatIfOnly) {
-        Write-Log 'Invio notifica di riepilogo ai subscriber.'
+    $membershipChanges = @($script:MembershipChanges)
+    $membershipChangeCount = $script:MembershipAdds + $script:MembershipRemoves
+    $changesTruncated = [Math]::Max(0, $membershipChangeCount - $membershipChanges.Count)
+    $changeLines = @($membershipChanges | ForEach-Object {
+            "- $($_.operation): $($_.deviceName) -> $($_.groupName)"
+        })
+    if ($changesTruncated -gt 0) {
+        $changeLines += "- ...altre $changesTruncated modifiche non mostrate"
+    }
+    $changeText = if ($changeLines.Count -gt 0) { $changeLines -join "`n`n" } else { 'Nessuna modifica membership.' }
+    $shouldNotify = $membershipChangeCount -gt 0 -or $script:ReconcileErrors -gt 0
+
+    if (-not [string]::IsNullOrWhiteSpace($notifyHook) -and -not $WhatIfOnly -and $shouldNotify) {
+        Write-Log "Invio notifica di riconciliazione ai subscriber ($($script:MembershipAdds) aggiunte, $($script:MembershipRemoves) rimozioni)."
         Send-Alert -WebhookUrl $notifyHook -Payload ([ordered]@{
                 solution     = 'Nimbus.BitLockerGroupSync'
-                event        = ($script:ReconcileErrors -gt 0 ? 'sync.completed_with_errors' : 'sync.completed')
+                event        = ($script:ReconcileErrors -gt 0 ? 'sync.membership_changed_with_errors' : 'sync.membership_changed')
                 severity     = ($script:ReconcileErrors -gt 0 ? 'warning' : 'info')
+                added        = $script:MembershipAdds
+                removed      = $script:MembershipRemoves
+                changeCount  = $membershipChangeCount
+                changes      = $membershipChanges
+                changesTruncated = $changesTruncated
+                changeText   = $changeText
                 deviceCount  = $deviceMap.Count
                 encrypted    = $desired.Encrypted.Count
                 notEncrypted = $desired.NotEncrypted.Count
@@ -670,6 +702,9 @@ try {
                 errors       = $script:ReconcileErrors
                 timestamp    = (Get-Date).ToString('o')
             })
+    }
+    elseif (-not [string]::IsNullOrWhiteSpace($notifyHook) -and -not $WhatIfOnly) {
+        Write-Log 'Nessuna modifica membership: notifica non inviata.'
     }
 
     # 7b) Alert opzionale su device cifrati senza recovery key (solo se la verifica escrow e' attiva)

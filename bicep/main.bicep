@@ -127,7 +127,7 @@ param deadmanWindowHours int = 12
 @description('Se true crea il workbook di Azure Monitor.')
 param deployWorkbook bool = true
 
-@description('Se true crea la Logic App che formatta e inoltra gli alert a Teams. Richiede deployMonitoring=true.')
+@description('Se true crea la Logic App che formatta e inoltra a Teams sia gli alert Azure Monitor sia le modifiche membership del runbook.')
 param deployTeamsLogicApp bool = false
 
 @description('Nome della Logic App di notifica Teams.')
@@ -151,6 +151,11 @@ param alertWebhookUrl string = ''
 @description('URL webhook di NOTIFICA a ogni run. Se valorizzato viene salvato come Automation variable cifrata.')
 @secure()
 param notifyWebhookUrl string = ''
+
+@description('Numero massimo di modifiche membership incluse in una notifica del runbook.')
+@minValue(0)
+@maxValue(200)
+param notificationDetailLimit int = 50
 
 @description('Se true assegna automaticamente i permessi Graph alla MI tramite deploymentScript (richiede una UAMI gia abilitata).')
 param assignGraphPermissions bool = false
@@ -187,6 +192,7 @@ var runbookParameters = {
   EnableKeyEscrowCheck: string(enableKeyEscrowCheck)
   TargetOperatingSystem: targetOperatingSystem
   KeyMissingAlertThreshold: string(keyMissingAlertThreshold)
+  NotificationDetailLimit: string(notificationDetailLimit)
   EnableMembershipDetailLogging: string(enableMembershipDetailLogging)
 }
 
@@ -292,12 +298,14 @@ resource alertWebhookVar 'Microsoft.Automation/automationAccounts/variables@2023
   }
 }
 
-resource notifyWebhookVar 'Microsoft.Automation/automationAccounts/variables@2023-11-01' = if (!empty(notifyWebhookUrl)) {
+resource notifyWebhookVar 'Microsoft.Automation/automationAccounts/variables@2023-11-01' = if (deployTeamsLogicApp || !empty(notifyWebhookUrl)) {
   parent: automationAccount
   name: 'BitLockerSyncNotifyWebhook'
   properties: {
     isEncrypted: true
-    value: '"${notifyWebhookUrl}"'
+    // Quando la Logic App e' attiva, il callback firmato viene collegato automaticamente.
+    #disable-next-line BCP318
+    value: deployTeamsLogicApp ? '"${teamsLogicApp.outputs.triggerUrl}"' : '"${notifyWebhookUrl}"'
   }
 }
 
@@ -352,9 +360,9 @@ module graphPermissions 'graphPermissions.bicep' = if (assignGraphPermissions &&
   }
 }
 
-// Logic App di notifica Teams (opt-in). Formatta il common alert schema in una
-// Adaptive Card e la posta al canale Teams.
-module teamsLogicApp 'teams-logicapp.bicep' = if (deployMonitoring && deployTeamsLogicApp) {
+// Logic App di notifica Teams (opt-in). Gestisce sia il common alert schema di
+// Azure Monitor sia il payload delle modifiche membership emesso dal runbook.
+module teamsLogicApp 'teams-logicapp.bicep' = if (deployTeamsLogicApp) {
   name: 'blkgm-teams-logicapp'
   params: {
     location: location

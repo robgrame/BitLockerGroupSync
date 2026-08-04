@@ -1,9 +1,8 @@
 // =============================================================================
 //  Nimbus.BitLockerGroupSync - teams-logicapp.bicep
-//  Logic App (Consumption) che riceve il common alert schema dall'Action Group
-//  e posta una Adaptive Card su un canale Teams (URL di tipo "Workflows" /
-//  Power Automate). Se l'URL Teams e' vuoto, la Logic App non invia nulla
-//  (deploy comunque valido: si imposta l'URL in un secondo momento).
+//  Logic App (Consumption) che riceve sia il common alert schema dall'Action
+//  Group sia le modifiche membership dal runbook e posta una Adaptive Card su
+//  un canale Teams (URL di tipo "Workflows" / Power Automate).
 // =============================================================================
 
 targetScope = 'resourceGroup'
@@ -32,7 +31,7 @@ resource workflow 'Microsoft.Logic/workflows@2019-05-01' = {
       contentVersion: '1.0.0.0'
       parameters: {
         teamsWebhookUrl: {
-          type: 'String'
+          type: 'SecureString'
         }
       }
       triggers: {
@@ -52,7 +51,7 @@ resource workflow 'Microsoft.Logic/workflows@2019-05-01' = {
         }
       }
       actions: {
-        Post_to_Teams: {
+        Post_Runbook_Notification: {
           type: 'If'
           runAfter: {}
           expression: {
@@ -63,6 +62,131 @@ resource workflow 'Microsoft.Logic/workflows@2019-05-01' = {
                     equals: [
                       '@parameters(\'teamsWebhookUrl\')'
                       ''
+                    ]
+                  }
+                ]
+              }
+              {
+                equals: [
+                  '@triggerBody()?[\'solution\']'
+                  'Nimbus.BitLockerGroupSync'
+                ]
+              }
+            ]
+          }
+          actions: {
+            Post_adaptive_card: {
+              type: 'Http'
+              inputs: {
+                method: 'POST'
+                uri: '@parameters(\'teamsWebhookUrl\')'
+                headers: {
+                  'Content-Type': 'application/json'
+                }
+                body: {
+                  type: 'message'
+                  attachments: [
+                    {
+                      contentType: 'application/vnd.microsoft.card.adaptive'
+                      content: {
+                        '$schema': 'http://adaptivecards.io/schemas/adaptive-card.json'
+                        type: 'AdaptiveCard'
+                        version: '1.4'
+                        msteams: {
+                          width: 'Full'
+                        }
+                        body: [
+                          {
+                            type: 'TextBlock'
+                            size: 'Large'
+                            weight: 'Bolder'
+                            text: '🔐 BitLocker Group Sync'
+                            wrap: true
+                          }
+                          {
+                            type: 'TextBlock'
+                            text: '@{triggerBody()?[\'event\']}'
+                            weight: 'Bolder'
+                            wrap: true
+                            spacing: 'None'
+                          }
+                          {
+                            type: 'FactSet'
+                            facts: [
+                              {
+                                title: 'Aggiunti'
+                                value: '@{string(triggerBody()?[\'added\'])}'
+                              }
+                              {
+                                title: 'Rimossi'
+                                value: '@{string(triggerBody()?[\'removed\'])}'
+                              }
+                              {
+                                title: 'Device valutati'
+                                value: '@{string(triggerBody()?[\'deviceCount\'])}'
+                              }
+                              {
+                                title: 'Errori'
+                                value: '@{string(triggerBody()?[\'errors\'])}'
+                              }
+                            ]
+                          }
+                          {
+                            type: 'TextBlock'
+                            text: '@{triggerBody()?[\'changeText\']}'
+                            wrap: true
+                            separator: true
+                          }
+                          {
+                            type: 'TextBlock'
+                            text: 'Eseguito: @{triggerBody()?[\'timestamp\']}'
+                            wrap: true
+                            isSubtle: true
+                            spacing: 'Small'
+                          }
+                        ]
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+          else: {
+            actions: {}
+          }
+        }
+        Post_Azure_Monitor_Alert: {
+          type: 'If'
+          runAfter: {}
+          expression: {
+            and: [
+              {
+                not: [
+                  {
+                    equals: [
+                      '@parameters(\'teamsWebhookUrl\')'
+                      ''
+                    ]
+                  }
+                ]
+              }
+              {
+                not: [
+                  {
+                    equals: [
+                      '@triggerBody()?[\'solution\']'
+                      'Nimbus.BitLockerGroupSync'
+                    ]
+                  }
+                ]
+              }
+              {
+                not: [
+                  {
+                    equals: [
+                      '@triggerBody()?[\'data\']?[\'essentials\']'
+                      null
                     ]
                   }
                 ]

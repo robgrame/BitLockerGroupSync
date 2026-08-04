@@ -190,6 +190,7 @@ Personalizzare almeno:
 | `deployTeamsLogicApp` | Abilitare solo dopo aver ottenuto il webhook Teams |
 | `teamsWebhookUrl` | URL Workflows del canale Teams |
 | `enableMembershipDetailLogging` | Abilita la vista workbook dei device aggiunti |
+| `notificationDetailLimit` | Numero massimo di aggiunte/rimozioni incluse nella card Teams |
 | `tags` | Cost center, owner, environment e classificazione cliente |
 | `authenticationMode` | Managed Identity, certificato o secret |
 | `managedIdentityName` | Nome della UAMI dedicata creata dal deployment |
@@ -219,6 +220,19 @@ Gli URL Teams, Logic App e Automation webhook sono segreti operativi:
 - non copiarli in ticket, log o documentazione condivisa;
 - salvare l'Automation trigger webhook al momento della creazione: l'URI viene
   mostrato una sola volta.
+
+Quando `deployTeamsLogicApp=true`, il callback firmato della Logic App viene salvato
+automaticamente nella Automation variable cifrata `BitLockerSyncNotifyWebhook`. Il
+runbook invia il riepilogo solo quando modifica membership o rileva errori; non è
+necessario creare un Automation trigger webhook.
+
+Per non salvare l'URL Teams su disco, acquisirlo e passarlo al deployment come
+`SecureString`:
+
+```powershell
+$TeamsWebhookUrl = Read-Host 'URL Workflows del canale Teams' -AsSecureString
+.\deploy.ps1 <parametri-comuni> -TeamsWebhookUrl $TeamsWebhookUrl
+```
 
 ## 6. Deployment assistito in due fasi
 

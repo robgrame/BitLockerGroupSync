@@ -25,31 +25,27 @@ param enableNotEncryptedGroup = false
 param enableKeyEscrowedGroup = false
 param enableKeyMissingGroup = false
 
-// Master switch verifica escrow recovery key. true = comportamento attuale (recupero chiavi
-// quando servono KeyEscrowed/KeyMissing/alert). Impostare a false per saltare del tutto il
-// controllo puntuale delle recovery key (il gruppo Encrypted non e' influenzato).
+// Master switch verifica escrow recovery key.
 param enableKeyEscrowCheck = false
 
 param targetOperatingSystem = 'Windows'
 
-// Autenticazione Graph:
-// ManagedIdentity | AppRegistrationCertificate | AppRegistrationSecret
-param authenticationMode = 'AppRegistrationCertificate'
+// Autenticazione Graph tramite App Registration e client secret.
+param authenticationMode = 'AppRegistrationSecret'
 param managedIdentityName = 'id-blk-groupsync'
 param appTenantId = '46b06a5e-8f7a-467b-bc9a-e776011fbb57'
 param appClientId = 'f9d6d647-2555-400a-8c27-fbbc7bd3ffcd'
 param certificateAssetName = 'GraphAuthCertificate'
 param graphCredentialVariableName = 'GraphClientSecret'
-param appClientSecret = ''
+param appClientSecret = '' // passare il valore a deploy.ps1 tramite -AppClientSecret
 
 param scheduleIntervalHours = 1
 param deployLogAnalytics = true
 
 // Monitoraggio nativo Azure (Action Group + alert rules + workbook).
 param deployMonitoring = true
-param alertEmails = [
-]
-param alertActionWebhookUrl = '' // valorizzare con l'URL del canale Teams / Logic App
+param alertEmails = []
+param alertActionWebhookUrl = ''
 param enableFailedAlert = true
 param enableErrorAlert = true
 param enableDeadmanAlert = true
@@ -57,19 +53,20 @@ param deadmanWindowHours = 12
 param deployWorkbook = true
 
 // Logic App di notifica Teams.
-param deployTeamsLogicApp = false
+param deployTeamsLogicApp = true
 param teamsLogicAppName = 'logic-bitlocker-teams'
-param teamsWebhookUrl = '' // incollare qui l'URL Workflows del canale Teams
+param teamsWebhookUrl = '' // passare il valore a deploy.ps1 tramite -TeamsWebhookUrl
 
-// Ottimizzazioni opzionali
+// Ottimizzazioni opzionali.
 param keyMissingAlertThreshold = 0
 param enableMembershipDetailLogging = true
+param notificationDetailLimit = 50
 
-// Webhook (secure): lasciare vuoti per non creare le variabili. Valorizzare per abilitarli.
+// Webhook outbound opzionali.
 param alertWebhookUrl = ''
 param notifyWebhookUrl = ''
 
-// Assegnazione automatica permessi Graph via deploymentScript (richiede UAMI pre-abilitata).
+// Assegnazione automatica permessi Graph via deploymentScript.
 param assignGraphPermissions = false
 param permissionGrantIdentityId = ''
 param permissionGrantIdentityClientId = ''

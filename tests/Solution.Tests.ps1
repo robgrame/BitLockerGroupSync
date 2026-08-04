@@ -73,6 +73,13 @@ Describe 'Parametri del runbook' {
     ) {
         $script:paramNames | Should -Contain $Name
     }
+    It 'Carica la configurazione runtime per gli avvii manuali' {
+        $script:runbookText = Get-Content $script:runbook -Raw
+        $script:runbookText | Should -Match 'Get-AutomationVariable -Name \$variableName'
+        $script:runbookText | Should -Match "BitLockerSyncRuntimeConfig"
+        $script:runbookText | Should -Match '\$script:ExplicitRuntimeParameters'
+        $script:runbookText | Should -Match 'Set-Variable -Name \$name -Value \$value -Scope Script'
+    }
 }
 
 Describe 'Gruppi opzionali' {

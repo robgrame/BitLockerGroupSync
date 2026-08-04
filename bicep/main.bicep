@@ -319,6 +319,17 @@ resource graphClientSecretVar 'Microsoft.Automation/automationAccounts/variables
   }
 }
 
+// Configurazione non sensibile usata dagli avvii manuali. I parametri passati
+// esplicitamente (schedule, webhook o Start-AzAutomationRunbook) hanno precedenza.
+resource runtimeConfigVar 'Microsoft.Automation/automationAccounts/variables@2023-11-01' = {
+  parent: automationAccount
+  name: 'BitLockerSyncRuntimeConfig'
+  properties: {
+    isEncrypted: false
+    value: string(runbookParameters)
+  }
+}
+
 resource logAnalytics 'Microsoft.OperationalInsights/workspaces@2023-09-01' = if (deployLogAnalytics) {
   name: logAnalyticsWorkspaceName
   location: location

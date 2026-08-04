@@ -201,6 +201,10 @@ pwsh ./scripts/Grant-GraphPermissions.ps1 -ManagedIdentityPrincipalId <principal
 
 ## 🖥️ Runbook — parametri runtime
 
+Il deployment salva la configurazione non sensibile anche nella Automation Variable
+`BitLockerSyncRuntimeConfig`. Gli avvii manuali dal portale la caricano automaticamente;
+i parametri forniti esplicitamente da schedule, webhook o PowerShell hanno precedenza.
+
 | Parametro | Default | Descrizione |
 |---|---|---|
 | `GroupPrefix` | *(vuoto)* | Prefisso opzionale dei gruppi |

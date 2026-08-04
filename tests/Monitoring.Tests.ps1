@@ -227,6 +227,11 @@ Describe 'Wiring in main.bicep' {
         $script:text | Should -Match "authenticationMode == 'AppRegistrationSecret'"
         $script:text | Should -Match 'isEncrypted: true'
     }
+    It 'Salva la configurazione runtime per gli avvii manuali' {
+        $script:text | Should -Match "name: 'BitLockerSyncRuntimeConfig'"
+        $script:text | Should -Match 'value: string\(runbookParameters\)'
+        $script:text | Should -Match 'isEncrypted: false'
+    }
 }
 
 Describe 'Workbook JSON' {

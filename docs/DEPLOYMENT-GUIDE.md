@@ -65,6 +65,10 @@ ai gruppi con autorizzazione application.
 La schedule contiene soltanto identificatori, nomi degli asset e modalità di
 autenticazione. Non contiene PFX, password o client secret.
 
+La stessa configurazione non sensibile viene salvata in
+`BitLockerSyncRuntimeConfig`, così un avvio manuale dal portale non richiede di
+reinserire tutti i parametri. I valori passati esplicitamente mantengono la precedenza.
+
 Per gli esempi completi di configurazione del file `.bicepparam`, vedere
 [`AUTHENTICATION-PARAMETERS.md`](AUTHENTICATION-PARAMETERS.md).
 

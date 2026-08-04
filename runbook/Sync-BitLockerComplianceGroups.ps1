@@ -147,6 +147,7 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 $VerbosePreference = 'Continue'
 
+$script:ExplicitRuntimeParameters = @($PSBoundParameters.Keys)
 $script:GraphBase = 'https://graph.microsoft.com/v1.0'
 $script:ReconcileErrors = 0
 $script:MembershipAdds = 0
@@ -170,6 +171,74 @@ function ConvertTo-Bool {
     param([object]$Value)
     if ($Value -is [bool]) { return $Value }
     return ("$Value").Trim().ToLower() -in @('true', '1', 'yes', 'y', 'on')
+}
+
+function Import-RuntimeConfiguration {
+    $variableName = 'BitLockerSyncRuntimeConfig'
+    try {
+        $config = Get-AutomationVariable -Name $variableName -ErrorAction Stop
+        if ($config -is [string]) {
+            $config = $config | ConvertFrom-Json -ErrorAction Stop
+        }
+    }
+    catch {
+        Write-Warning "Automation Variable '$variableName' non disponibile: verranno usati parametri espliciti e default del runbook. $($_.Exception.Message)"
+        return
+    }
+
+    $parameterNames = @(
+        'AuthenticationMode',
+        'ManagedIdentityClientId',
+        'AppTenantId',
+        'AppClientId',
+        'CertificateAssetName',
+        'ClientSecretVariableName',
+        'GroupPrefix',
+        'EncryptedGroupName',
+        'NotEncryptedGroupName',
+        'KeyEscrowedGroupName',
+        'KeyMissingGroupName',
+        'EnableNotEncryptedGroup',
+        'EnableKeyEscrowedGroup',
+        'EnableKeyMissingGroup',
+        'EnableKeyEscrowCheck',
+        'TargetOperatingSystem',
+        'KeyMissingAlertThreshold',
+        'NotificationDetailLimit',
+        'EnableMembershipDetailLogging'
+    )
+
+    $imported = 0
+    foreach ($name in $parameterNames) {
+        if ($script:ExplicitRuntimeParameters -contains $name) { continue }
+
+        $hasValue = $false
+        $value = $null
+        if ($config -is [System.Collections.IDictionary]) {
+            if ($config.Contains($name)) {
+                $hasValue = $true
+                $value = $config[$name]
+            }
+        }
+        else {
+            $property = $config.PSObject.Properties[$name]
+            if ($null -ne $property) {
+                $hasValue = $true
+                $value = $property.Value
+            }
+        }
+        if (-not $hasValue) { continue }
+
+        if ($name -in @('KeyMissingAlertThreshold', 'NotificationDetailLimit')) {
+            $value = [int]$value
+        }
+        else {
+            $value = [string]$value
+        }
+        Set-Variable -Name $name -Value $value -Scope Script
+        $imported++
+    }
+    Write-Log "Caricati $imported parametri runtime dalla Automation Variable '$variableName'."
 }
 
 function Connect-GraphSession {
@@ -520,6 +589,7 @@ function Get-ManagedDeviceState {
 $summary = [ordered]@{}
 try {
     Write-Log '=== Nimbus.BitLockerGroupSync - avvio ==='
+    Import-RuntimeConfiguration
     if ($WhatIfOnly) { Write-Log 'Modalita WhatIf attiva: nessuna modifica verra applicata.' 'WARN' }
 
     Connect-GraphSession `

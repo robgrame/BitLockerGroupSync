@@ -5,7 +5,7 @@ using './main.bicep'
 // ---------------------------------------------------------------------------
 
 param location = 'italynorth'
-param automationAccountName = 'aa-bitlocker-groupsync'
+param automationAccountName = 'aa-encrypted-devices'
 param logAnalyticsWorkspaceName = 'aa-bitlocker-groupsync-law'
 param runbookName = 'Sync-BitLockerComplianceGroups'
 

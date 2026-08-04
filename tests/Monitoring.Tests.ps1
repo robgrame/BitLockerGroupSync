@@ -114,6 +114,9 @@ Describe 'Modulo teams-logicapp.bicep' {
     It 'Posta una Adaptive Card' {
         $script:text | Should -Match ([regex]::Escape('application/vnd.microsoft.card.adaptive'))
         $script:text | Should -Match "type: 'AdaptiveCard'"
+        $script:text | Should -Match 'Post_runbook_adaptive_card'
+        $script:text | Should -Match 'Post_monitor_adaptive_card'
+        ([regex]::Matches($script:text, 'Post_adaptive_card')).Count | Should -Be 0
     }
     It 'Distingue notifiche runbook e alert Azure Monitor' {
         $script:text | Should -Match 'Post_Runbook_Notification'

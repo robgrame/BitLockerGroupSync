@@ -75,7 +75,7 @@ resource workflow 'Microsoft.Logic/workflows@2019-05-01' = {
             ]
           }
           actions: {
-            Post_adaptive_card: {
+            Post_runbook_adaptive_card: {
               type: 'Http'
               inputs: {
                 method: 'POST'
@@ -194,7 +194,7 @@ resource workflow 'Microsoft.Logic/workflows@2019-05-01' = {
             ]
           }
           actions: {
-            Post_adaptive_card: {
+            Post_monitor_adaptive_card: {
               type: 'Http'
               inputs: {
                 method: 'POST'

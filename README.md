@@ -1,6 +1,6 @@
 <div align="center">
 
-# 🔐 Nimbus.BitLockerGroupSync
+# 🔐 BitLocker Group Sync
 
 ### Dynamic Entra ID security groups driven by Intune BitLocker encryption state & recovery-key escrow
 

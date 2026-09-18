@@ -100,7 +100,7 @@
     configurata nel file .bicepparam.
 
 .NOTES
-    Version: 1.1.0
+    Version: 1.1.1
 
     Per visualizzare la guida completa:
         Get-Help .\deploy.ps1 -Full

@@ -170,7 +170,7 @@ group, usare `-SkipProviderRegistration`.
 
 ### Runbook extensionAttribute10
 
-La versione 1.1.0 può distribuire nello stesso Automation Account il runbook
+La versione 1.1.1 può distribuire nello stesso Automation Account il runbook
 `Sync-BitLockerExtensionAttribute`, che imposta sui device Entra:
 
 - `extensionAttribute10 = "enc"` quando Intune riporta `isEncrypted=true`;

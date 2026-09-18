@@ -35,7 +35,7 @@
       - Notifica opzionale (webhook) del riepilogo a ogni run.
 
 .NOTES
-    Version: 1.0.1
+    Version: 1.0.2
 
     Permessi Graph (application) richiesti sulla managed identity (least privilege):
       - DeviceManagementManagedDevices.Read.All

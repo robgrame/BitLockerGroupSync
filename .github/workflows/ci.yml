@@ -15,8 +15,8 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install Bicep CLI
         run: |
-          curl -Lo bicep https://github.com/Azure/bicep/releases/latest/download/bicep-linux-x64
-          chmod +x ./bicep && sudo mv ./bicep /usr/local/bin/bicep
+          curl -Lo /tmp/bicep https://github.com/Azure/bicep/releases/latest/download/bicep-linux-x64
+          chmod +x /tmp/bicep && sudo mv /tmp/bicep /usr/local/bin/bicep
           bicep --version
       - name: Build main.bicep
         run: bicep build bicep/main.bicep --stdout > /dev/null

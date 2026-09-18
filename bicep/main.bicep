@@ -213,7 +213,7 @@ param permissionGrantIdentityClientId string = ''
 param tags object = {
   solution: 'BitLockerGroupSync'
   managedBy: 'bicep'
-  version: '1.1.0'
+  version: '1.1.1'
 }
 
 var graphAuthModuleUri = 'https://www.powershellgallery.com/api/v2/package/Microsoft.Graph.Authentication'

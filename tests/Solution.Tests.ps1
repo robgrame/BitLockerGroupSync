@@ -182,6 +182,7 @@ Describe 'Permessi least-privilege' {
     BeforeAll {
         $script:grantText = Get-Content $script:grant -Raw
         $script:mainBicepText = Get-Content $script:mainBicep -Raw
+        $script:deployText = Get-Content $script:deploy -Raw
     }
     It 'Include <Role>' -ForEach @(
         @{ Role = 'DeviceManagementManagedDevices.Read.All' }
@@ -217,7 +218,11 @@ Describe 'Permessi least-privilege' {
     }
     It 'Installa autonomamente i moduli Graph se mancanti' {
         $script:grantText | Should -Match 'Install-Module -Name \$moduleName'
-        $script:grantText | Should -Match "MinimumVersion 2\.28\.0"
+        $script:grantText | Should -Match "MinimumVersion 2\.40\.0"
+        $script:deployText | Should -Match "Assert-Command -Name 'pwsh'"
+        $script:deployText | Should -Match '& pwsh[\s\S]*Grant-GraphPermissions\.ps1'
+        $script:deployText | Should -Match '-GraphAppRolesBase64 \$graphAppRolesBase64'
+        $script:deployText | Should -Match 'Riconciliazione dei permessi Graph fallita'
     }
     It 'Ritenta la replica e il throttling della managed identity in Graph' {
         $script:grantText | Should -Match 'function Invoke-GraphWithRetry'
@@ -226,6 +231,25 @@ Describe 'Permessi least-privilege' {
         $script:grantText | Should -Match '\$statusCode -ge 500'
         $script:grantText | Should -Match 'Service principal della managed identity'
         $script:grantText | Should -Match 'App role assignment della managed identity'
+    }
+    It 'Trasporta tutti i ruoli attraverso il processo pwsh figlio' {
+        $roles = @(
+            'DeviceManagementManagedDevices.Read.All'
+            'BitlockerKey.Read.All'
+            'Device.ReadWrite.All'
+            'Group.Create'
+            'GroupMember.ReadWrite.All'
+        )
+        $json = ConvertTo-Json -InputObject $roles -Compress
+        $payload = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($json))
+        $output = & pwsh `
+            -NoProfile `
+            -File $script:grant `
+            -ManagedIdentityPrincipalId '00000000-0000-0000-0000-000000000000' `
+            -GraphAppRolesBase64 $payload `
+            -ValidateRolePayloadOnly
+        $LASTEXITCODE | Should -Be 0
+        @($output | ConvertFrom-Json) | Should -Be $roles
     }
 }
 
@@ -371,8 +395,9 @@ Describe 'Orchestrazione del deployment' {
     }
     It 'Assegna i permessi Graph minimi per la selezione' {
         $script:deployText | Should -Match 'Get-RequiredGraphAppRole'
-        $script:deployText | Should -Match 'GraphAppRoles\s+= \$requiredGraphAppRoles'
-        $script:deployText | Should -Match 'Reconcile\s+= \$true'
+        $script:deployText | Should -Match 'ConvertTo-Json -InputObject @\(\$requiredGraphAppRoles\) -Compress'
+        $script:deployText | Should -Match '-GraphAppRolesBase64 \$graphAppRolesBase64'
+        $script:deployText | Should -Match '-Reconcile\s+`?'
     }
     It 'Non assegna BitlockerKey.Read.All quando escrow e disabilitato' {
         $roles = @(Get-RequiredGraphAppRole -DeployGroupSync $true -EnableKeyEscrowCheck $false)

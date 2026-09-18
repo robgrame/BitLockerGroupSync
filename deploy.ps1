@@ -109,7 +109,7 @@
     configurata nel file .bicepparam.
 
 .NOTES
-    Version: 1.2.0
+    Version: 1.2.1
 
     Per visualizzare la guida completa:
         Get-Help .\deploy.ps1 -Full
@@ -233,8 +233,8 @@ function Initialize-DeploymentTooling {
     Install-RequiredModule -Name Az.Automation -MinimumVersion 1.11.0
 
     if ($GrantGraphPermissions) {
-        Install-RequiredModule -Name Microsoft.Graph.Authentication -MinimumVersion 2.28.0
-        Install-RequiredModule -Name Microsoft.Graph.Applications -MinimumVersion 2.28.0
+        Install-RequiredModule -Name Microsoft.Graph.Authentication -MinimumVersion 2.40.0
+        Install-RequiredModule -Name Microsoft.Graph.Applications -MinimumVersion 2.40.0
     }
 }
 
@@ -632,8 +632,7 @@ Assert-Command -Name 'Get-AzResourceGroupDeploymentWhatIfResult'
 Assert-Command -Name 'New-AzAutomationWebhook'
 
 if ($GrantGraphPermissions) {
-    Assert-Command -Name 'Connect-MgGraph'
-    Assert-Command -Name 'Get-MgServicePrincipal'
+    Assert-Command -Name 'pwsh'
 }
 
 $parameterValues = Get-BicepParameterValues -Path $resolvedParameterFile
@@ -926,14 +925,21 @@ if ($AuthenticationMode -eq 'AppRegistrationCertificate' -and -not [string]::IsN
 
 if ($GrantGraphPermissions) {
     Write-Host '==> Assegnazione permessi Graph alla managed identity...' -ForegroundColor Cyan
-    $graphParams = @{
-        ManagedIdentityPrincipalId = $graphPermissionPrincipalId
-        GraphAppRoles              = $requiredGraphAppRoles
-        Reconcile                  = $true
-        TenantId                   = $context.Tenant.Id
-        UseDeviceCode              = $true
+    $graphAppRolesJson = ConvertTo-Json -InputObject @($requiredGraphAppRoles) -Compress
+    $graphAppRolesBase64 = [Convert]::ToBase64String(
+        [Text.Encoding]::UTF8.GetBytes($graphAppRolesJson)
+    )
+    & pwsh `
+        -NoProfile `
+        -File "$PSScriptRoot\scripts\Grant-GraphPermissions.ps1" `
+        -ManagedIdentityPrincipalId $graphPermissionPrincipalId `
+        -GraphAppRolesBase64 $graphAppRolesBase64 `
+        -Reconcile `
+        -TenantId $context.Tenant.Id `
+        -UseDeviceCode
+    if ($LASTEXITCODE -ne 0) {
+        throw "Riconciliazione dei permessi Graph fallita (exit code $LASTEXITCODE)."
     }
-    & "$PSScriptRoot\scripts\Grant-GraphPermissions.ps1" @graphParams
 
     Write-Host '==> Attivazione schedule e dead-man alert dopo il grant Graph...' -ForegroundColor Cyan
     $activationDeploymentName = "nimbus-bitlocker-activate-$(Get-Date -Format 'yyyyMMddHHmmssfff')"

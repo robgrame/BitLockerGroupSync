@@ -45,6 +45,9 @@ param(
     ),
 
     [Parameter()]
+    [string]$GraphAppRolesBase64,
+
+    [Parameter()]
     [switch]$UseDeviceCode,
 
     [Parameter()]
@@ -54,7 +57,10 @@ param(
     [switch]$Reconcile,
 
     [Parameter()]
-    [string]$TenantId
+    [string]$TenantId,
+
+    [Parameter()]
+    [switch]$ValidateRolePayloadOnly
 )
 
 $ErrorActionPreference = 'Stop'
@@ -67,12 +73,27 @@ $ManagedGraphAppRoles = @(
     'GroupMember.ReadWrite.All'
 )
 
+if (-not [string]::IsNullOrWhiteSpace($GraphAppRolesBase64)) {
+    try {
+        $rolesJson = [Text.Encoding]::UTF8.GetString(
+            [Convert]::FromBase64String($GraphAppRolesBase64)
+        )
+        $GraphAppRoles = @($rolesJson | ConvertFrom-Json)
+    }
+    catch {
+        throw "GraphAppRolesBase64 non contiene un payload JSON Base64 valido: $($_.Exception.Message)"
+    }
+}
 $unsupportedRoles = @($GraphAppRoles | Where-Object { $_ -notin $ManagedGraphAppRoles })
 if ($unsupportedRoles.Count -gt 0) {
     throw "GraphAppRoles contiene ruoli non gestiti: $($unsupportedRoles -join ', ')."
 }
 if ($Revoke -and $Reconcile) {
     throw 'Revoke e Reconcile non possono essere usati insieme.'
+}
+if ($ValidateRolePayloadOnly) {
+    ConvertTo-Json -InputObject @($GraphAppRoles) -Compress
+    return
 }
 
 function Get-GraphStatusCode {
@@ -115,12 +136,12 @@ function Invoke-GraphWithRetry {
 }
 
 foreach ($moduleName in @('Microsoft.Graph.Authentication', 'Microsoft.Graph.Applications')) {
-    if (-not (Get-Module -ListAvailable -Name $moduleName | Where-Object Version -ge '2.28.0')) {
+    if (-not (Get-Module -ListAvailable -Name $moduleName | Where-Object Version -ge '2.40.0')) {
         Write-Host "Installazione modulo $moduleName..." -ForegroundColor Cyan
-        Install-Module -Name $moduleName -MinimumVersion 2.28.0 -Repository PSGallery `
+        Install-Module -Name $moduleName -MinimumVersion 2.40.0 -Repository PSGallery `
             -Scope CurrentUser -Force -AllowClobber
     }
-    Import-Module $moduleName -MinimumVersion 2.28.0 -ErrorAction Stop
+    Import-Module $moduleName -MinimumVersion 2.40.0 -ErrorAction Stop
 }
 
 Write-Host 'Connessione a Microsoft Graph (serve consenso admin)...' -ForegroundColor Cyan

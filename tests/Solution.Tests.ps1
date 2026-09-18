@@ -486,7 +486,7 @@ Describe 'Orchestrazione del deployment' {
     It 'Ricrea il jobSchedule per applicare tutti i parametri runtime' {
         $script:deployText | Should -Match 'Remove-ExistingJobScheduleLink'
         $script:deployText | Should -Match 'Unregister-AzAutomationScheduledRunbook'
-        $script:deployText | Should -Match 'Get-AzResource -ResourceId \$jobScheduleResourceId'
+        $script:deployText | Should -Match 'Get-AzAutomationScheduledRunbook[\s\S]*Where-Object JobScheduleId -eq \$link\.JobScheduleId'
         $script:deployText | Should -Match 'Timeout durante la rimozione del jobSchedule'
     }
     It 'Rimuove esplicitamente gli artefatti dei runbook non selezionati' {

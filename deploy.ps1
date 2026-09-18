@@ -109,7 +109,7 @@
     configurata nel file .bicepparam.
 
 .NOTES
-    Version: 1.3.1
+    Version: 1.3.2
 
     Per visualizzare la guida completa:
         Get-Help .\deploy.ps1 -Full
@@ -343,11 +343,10 @@ function Remove-ExistingJobScheduleLink {
         [Parameter()][string]$ScheduleName
     )
 
-    $account = @(Get-AzAutomationAccount `
-            -ResourceGroupName $ResourceGroupName `
-            -ErrorAction Stop |
-        Where-Object AutomationAccountName -eq $AutomationAccountName |
-        Select-Object -First 1)
+    $account = Get-AzAutomationAccount `
+        -ResourceGroupName $ResourceGroupName `
+        -Name $AutomationAccountName `
+        -ErrorAction SilentlyContinue
     if (-not $account) { return }
 
     $links = @(Get-AzAutomationScheduledRunbook `
@@ -361,7 +360,6 @@ function Remove-ExistingJobScheduleLink {
 
     foreach ($link in $links) {
         Write-Host "==> Rimozione jobSchedule esistente '$($link.JobScheduleId)' per aggiornare i parametri runtime..." -ForegroundColor Cyan
-        $jobScheduleResourceId = "$($account.Id)/jobSchedules/$($link.JobScheduleId)"
         Unregister-AzAutomationScheduledRunbook `
             -ResourceGroupName $ResourceGroupName `
             -AutomationAccountName $AutomationAccountName `
@@ -370,18 +368,13 @@ function Remove-ExistingJobScheduleLink {
 
         $deadline = (Get-Date).AddMinutes(2)
         do {
-            try {
-                $remaining = Get-AzResource -ResourceId $jobScheduleResourceId -ErrorAction Stop
-            }
-            catch {
-                $statusCode = $_.Exception.Response.StatusCode.value__
-                if ($statusCode -eq 404 -or $_.FullyQualifiedErrorId -match 'ResourceNotFound|NotFound') {
-                    $remaining = $null
-                }
-                else {
-                    throw
-                }
-            }
+            $remaining = @(
+                Get-AzAutomationScheduledRunbook `
+                    -ResourceGroupName $ResourceGroupName `
+                    -AutomationAccountName $AutomationAccountName `
+                    -ErrorAction Stop |
+                    Where-Object JobScheduleId -eq $link.JobScheduleId
+            )
             if (-not $remaining) { break }
             if ((Get-Date) -ge $deadline) {
                 throw "Timeout durante la rimozione del jobSchedule '$($link.JobScheduleId)'."
@@ -933,7 +926,7 @@ else {
     @{
         solution  = 'BitLockerGroupSync'
         managedBy = 'deploy.ps1'
-        version   = '1.3.1'
+        version   = '1.3.2'
     }
 }
 $configuredScheduleIntervalHours = if ($null -ne $parameterValues.scheduleIntervalHours) {

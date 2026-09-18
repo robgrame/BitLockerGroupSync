@@ -11,6 +11,7 @@ param runbookName = 'Sync-BitLockerComplianceGroups'
 
 // URL raw del runbook nel repo pubblico (branch main).
 param runbookContentUri = 'https://raw.githubusercontent.com/robgrame/Nimbus.BitLockerGroupSync/main/runbook/Sync-BitLockerComplianceGroups.ps1'
+param deployGroupSyncRunbook = true
 param deployExtensionAttributeRunbook = true
 param extensionAttributeRunbookContentUri = 'https://raw.githubusercontent.com/robgrame/Nimbus.BitLockerGroupSync/main/runbook/Sync-BitLockerExtensionAttribute.ps1'
 param extensionAttributeName = 'extensionAttribute10'
@@ -74,14 +75,9 @@ param notificationDetailLimit = 50
 param alertWebhookUrl = ''
 param notifyWebhookUrl = ''
 
-// Assegnazione automatica permessi Graph via deploymentScript.
-param assignGraphPermissions = false
-param permissionGrantIdentityId = ''
-param permissionGrantIdentityClientId = ''
-
 param tags = {
   solution: 'BitLockerGroupSync'
   managedBy: 'bicep'
   environment: 'prod'
-  version: '1.1.1'
+  version: '1.2.0'
 }

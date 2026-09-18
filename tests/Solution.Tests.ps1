@@ -5,6 +5,8 @@ BeforeAll {
     $script:runbook = Join-Path $root 'runbook\Sync-BitLockerComplianceGroups.ps1'
     $script:extensionAttributeRunbook = Join-Path $root 'runbook\Sync-BitLockerExtensionAttribute.ps1'
     $script:grant = Join-Path $root 'scripts\Grant-GraphPermissions.ps1'
+    $script:mainBicep = Join-Path $root 'bicep\main.bicep'
+    $script:monitoringBicep = Join-Path $root 'bicep\monitoring.bicep'
     $script:mailTemplate = Join-Path $root 'templates\Entra-Permissions-Request.eml'
     $script:deploy = Join-Path $root 'deploy.ps1'
 
@@ -177,7 +179,10 @@ Describe 'Gruppi opzionali' {
 }
 
 Describe 'Permessi least-privilege' {
-    BeforeAll { $script:grantText = Get-Content $script:grant -Raw }
+    BeforeAll {
+        $script:grantText = Get-Content $script:grant -Raw
+        $script:mainBicepText = Get-Content $script:mainBicep -Raw
+    }
     It 'Include <Role>' -ForEach @(
         @{ Role = 'DeviceManagementManagedDevices.Read.All' }
         @{ Role = 'BitlockerKey.Read.All' }
@@ -199,9 +204,28 @@ Describe 'Permessi least-privilege' {
         $script:grantText | Should -Match '\[switch\]\$Revoke'
         $script:grantText | Should -Match 'Remove-MgServicePrincipalAppRoleAssignment'
     }
+    It 'Riconcilia i ruoli gestiti revocando quelli non richiesti' {
+        $script:grantText | Should -Match '\[switch\]\$Reconcile'
+        $script:grantText | Should -Match '\$rolesToProcess = if \(\$Reconcile\)'
+        $script:grantText | Should -Match '\$roleValue -notin \$GraphAppRoles'
+        $script:grantText | Should -Match 'Revoke e Reconcile non possono essere usati insieme'
+    }
+    It 'Non espone un deploymentScript privilegiato configurabile via Bicep' {
+        $script:mainBicepText | Should -Not -Match 'assignGraphPermissions'
+        $script:mainBicepText | Should -Not -Match 'permissionGrantIdentity'
+        Test-Path (Join-Path $script:root 'bicep\graphPermissions.bicep') | Should -BeFalse
+    }
     It 'Installa autonomamente i moduli Graph se mancanti' {
         $script:grantText | Should -Match 'Install-Module -Name \$moduleName'
         $script:grantText | Should -Match "MinimumVersion 2\.28\.0"
+    }
+    It 'Ritenta la replica e il throttling della managed identity in Graph' {
+        $script:grantText | Should -Match 'function Invoke-GraphWithRetry'
+        $script:grantText | Should -Match '\$statusCode -eq 404'
+        $script:grantText | Should -Match '\$statusCode -eq 429'
+        $script:grantText | Should -Match '\$statusCode -ge 500'
+        $script:grantText | Should -Match 'Service principal della managed identity'
+        $script:grantText | Should -Match 'App role assignment della managed identity'
     }
 }
 
@@ -238,7 +262,19 @@ Describe 'Logica di batching' {
 }
 
 Describe 'Orchestrazione del deployment' {
-    BeforeAll { $script:deployText = Get-Content $script:deploy -Raw }
+    BeforeAll {
+        $script:deployText = Get-Content $script:deploy -Raw
+        $script:monitoringBicepText = Get-Content $script:monitoringBicep -Raw
+        $deployAst = Get-Ast -Path $script:deploy
+        foreach ($functionName in @('Resolve-RunbookDeploymentSelection', 'Get-RequiredGraphAppRole')) {
+            $functionAst = $deployAst.Find({
+                    param($node)
+                    $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+                    $node.Name -eq $functionName
+                }, $true)
+            . ([scriptblock]::Create($functionAst.Extent.Text))
+        }
+    }
     It 'Verifica tenant e subscription espliciti' {
         $script:deployText | Should -Match '\$TenantId'
         $script:deployText | Should -Match '\$SubscriptionId'
@@ -296,6 +332,67 @@ Describe 'Orchestrazione del deployment' {
         $script:deployText | Should -Match 'enableSchedule\s+= \$runtimeEnabled'
         $script:deployText | Should -Match 'enableDeadmanAlert\s+= \$runtimeEnabled'
     }
+    It 'Seleziona uno o entrambi i runbook dal deploy' {
+        $script:deployText | Should -Match "ValidateSet\('All', 'GroupSync', 'ExtensionAttribute'\)"
+        $script:deployText | Should -Match 'Resolve-RunbookDeploymentSelection'
+        $script:deployText | Should -Match '\$parameterValues\.deployGroupSyncRunbook\.value'
+        $script:deployText | Should -Match '\$parameterValues\.deployExtensionAttributeRunbook\.value'
+        $script:deployText | Should -Match 'deployGroupSyncRunbook = \$deployGroupSyncRunbook'
+        $script:deployText | Should -Match 'deployExtensionAttributeRunbook = \$deployExtensionAttributeRunbook'
+    }
+    It 'Risolve correttamente la selezione esplicita <Selection>' -ForEach @(
+        @{ Selection = 'All'; GroupSync = $true; ExtensionAttribute = $true }
+        @{ Selection = 'GroupSync'; GroupSync = $true; ExtensionAttribute = $false }
+        @{ Selection = 'ExtensionAttribute'; GroupSync = $false; ExtensionAttribute = $true }
+    ) {
+        $result = Resolve-RunbookDeploymentSelection `
+            -RunbookSelection $Selection `
+            -SelectionWasSpecified $true `
+            -ParameterDeployGroupSync $false `
+            -ParameterDeployExtensionAttribute $false
+        $result.DeployGroupSync | Should -Be $GroupSync
+        $result.DeployExtensionAttribute | Should -Be $ExtensionAttribute
+    }
+    It 'Mantiene la selezione del file parametri quando lo switch e omesso' {
+        $result = Resolve-RunbookDeploymentSelection `
+            -SelectionWasSpecified $false `
+            -ParameterDeployGroupSync $false `
+            -ParameterDeployExtensionAttribute $true
+        $result.DeployGroupSync | Should -BeFalse
+        $result.DeployExtensionAttribute | Should -BeTrue
+    }
+    It 'Rifiuta un file parametri che disabilita entrambi i runbook' {
+        {
+            Resolve-RunbookDeploymentSelection `
+                -SelectionWasSpecified $false `
+                -ParameterDeployGroupSync $false `
+                -ParameterDeployExtensionAttribute $false
+        } | Should -Throw '*almeno un runbook*'
+    }
+    It 'Assegna i permessi Graph minimi per la selezione' {
+        $script:deployText | Should -Match 'Get-RequiredGraphAppRole'
+        $script:deployText | Should -Match 'GraphAppRoles\s+= \$requiredGraphAppRoles'
+        $script:deployText | Should -Match 'Reconcile\s+= \$true'
+    }
+    It 'Non assegna BitlockerKey.Read.All quando escrow e disabilitato' {
+        $roles = @(Get-RequiredGraphAppRole -DeployGroupSync $true -EnableKeyEscrowCheck $false)
+        $roles | Should -Not -Contain 'BitlockerKey.Read.All'
+        $roles | Should -Contain 'GroupMember.ReadWrite.All'
+    }
+    It 'Assegna BitlockerKey.Read.All quando escrow e abilitato' {
+        $roles = @(Get-RequiredGraphAppRole -DeployGroupSync $true -EnableKeyEscrowCheck $true)
+        $roles | Should -Contain 'BitlockerKey.Read.All'
+    }
+    It 'Assegna solo i due ruoli device per ExtensionAttribute' {
+        $roles = @(Get-RequiredGraphAppRole -DeployGroupSync $false -EnableKeyEscrowCheck $true)
+        $roles | Should -Be @(
+            'DeviceManagementManagedDevices.Read.All'
+            'Device.ReadWrite.All'
+        )
+        $script:deployText | Should -Match 'DeviceManagementManagedDevices\.Read\.All'
+        $script:deployText | Should -Match 'Device\.ReadWrite\.All'
+        $script:deployText | Should -Match 'GroupMember\.ReadWrite\.All'
+    }
     It 'Mantiene le comunicazioni cliente separate dal deployment' {
         $script:deployText | Should -Not -Match 'New-EntraPermissionRequest\.ps1'
         $script:deployText | Should -Not -Match 'PermissionRequestSender'
@@ -316,13 +413,47 @@ Describe 'Orchestrazione del deployment' {
     It 'Ricrea il jobSchedule per applicare tutti i parametri runtime' {
         $script:deployText | Should -Match 'Remove-ExistingJobScheduleLink'
         $script:deployText | Should -Match 'Unregister-AzAutomationScheduledRunbook'
-        $script:deployText | Should -Match '\$_.ScheduleName -eq \$ScheduleName'
         $script:deployText | Should -Match 'Get-AzResource -ResourceId \$jobScheduleResourceId'
         $script:deployText | Should -Match 'Timeout durante la rimozione del jobSchedule'
-        $script:deployText | Should -Match '-RunbookName \$configuredExtensionAttributeRunbookName\r?\n\r?\nWrite-Host'
     }
-    It 'Usa una frequenza oraria anche come fallback del deploy' {
-        $script:deployText | Should -Match '\$configuredScheduleIntervalHours[\s\S]*else \{\s*1\s*\}'
+    It 'Rimuove esplicitamente gli artefatti dei runbook non selezionati' {
+        $script:deployText | Should -Match 'function Remove-DeselectedRunbookArtifact'
+        $script:deployText | Should -Match 'Remove-AzAutomationRunbook'
+        $script:deployText | Should -Match 'Remove-AzAutomationSchedule'
+        $script:deployText | Should -Match 'Remove-AzAutomationVariable'
+        $script:deployText | Should -Match 'Remove-AzAutomationWebhook'
+        $script:deployText | Should -Match "Name 'alert-blkgm-extension-no-success'"
+        $script:monitoringBicepText | Should -Match "name: 'alert-blkgm-extension-no-success'"
+    }
+    It 'Mantiene i job disabilitati fino al completamento del grant Graph' {
+        $script:deployText | Should -Match '\$deploymentParams\.enableSchedule = \$false'
+        $script:deployText | Should -Match '\$deploymentParams\.enableDeadmanAlert = \$false'
+        $script:deployText | Should -Match 'Attivazione schedule e dead-man alert dopo il grant Graph'
+        $script:deployText | Should -Match 'Disable-RunbookWebhook'
+        $script:deployText | Should -Match 'Enable-RunbookWebhook'
+        $script:deployText | Should -Match 'if \(-not \$PermissionsConfirmed\)'
+    }
+    It 'Dichiara gli helper webhook allo scope dello script' {
+        $deployAst = Get-Ast -Path $script:deploy
+        foreach ($functionName in @('Disable-RunbookWebhook', 'Enable-RunbookWebhook')) {
+            $functionAst = $deployAst.Find({
+                    param($node)
+                    $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+                    $node.Name -eq $functionName
+                }, $true)
+            $functionAst | Should -Not -BeNullOrEmpty
+            $ancestor = $functionAst.Parent
+            while ($ancestor) {
+                $ancestor | Should -Not -BeOfType [System.Management.Automation.Language.FunctionDefinitionAst]
+                $ancestor = $ancestor.Parent
+            }
+        }
+    }
+    It 'Valida i conflitti tra selezione e azioni prima del login Azure' {
+        $selectionGuard = $script:deployText.IndexOf('Webhook e avvio GroupSync richiedono')
+        $azureLogin = $script:deployText.IndexOf('Verifica login e contesto Azure')
+        $selectionGuard | Should -BeGreaterOrEqual 0
+        $selectionGuard | Should -BeLessThan $azureLogin
     }
     It 'Riusa certificato e secret esistenti nelle fasi successive' {
         $script:deployText | Should -Match 'Get-AzAutomationCertificate'

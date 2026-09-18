@@ -20,8 +20,6 @@ jobs:
           bicep --version
       - name: Build main.bicep
         run: bicep build bicep/main.bicep --stdout > /dev/null
-      - name: Build graphPermissions.bicep
-        run: bicep build bicep/graphPermissions.bicep --stdout > /dev/null
       - name: Build deployment parameters
         run: bicep build-params bicep/main.bicepparam --stdout > /dev/null
 

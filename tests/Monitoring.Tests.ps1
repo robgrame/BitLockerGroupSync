@@ -164,6 +164,7 @@ Describe 'Wiring in main.bicep' {
         @{ Name = 'notificationDetailLimit' }
         @{ Name = 'enableSchedule' }
         @{ Name = 'authenticationMode' }
+        @{ Name = 'deployGroupSyncRunbook' }
         @{ Name = 'deployExtensionAttributeRunbook' }
         @{ Name = 'extensionAttributeRunbookContentUri' }
         @{ Name = 'extensionAttributeName' }
@@ -185,8 +186,8 @@ Describe 'Wiring in main.bicep' {
         $script:text | Should -Match 'EnableKeyEscrowCheck: string\(enableKeyEscrowCheck\)'
     }
     It 'Invoca il monitoraggio solo quando Log Analytics e attivo' {
-        $script:text | Should -Match "module monitoring 'monitoring.bicep' = if \(deployMonitoring && deployLogAnalytics && !deployTeamsLogicApp\)"
-        $script:text | Should -Match "module monitoringWithTeams 'monitoring.bicep' = if \(deployMonitoring && deployLogAnalytics && deployTeamsLogicApp\)"
+        $script:text | Should -Match "module monitoring 'monitoring.bicep' = if \(deployMonitoring && deployLogAnalytics && !deployTeamsLogicApp && \(deployGroupSyncRunbook \|\| deployExtensionAttributeRunbook\)\)"
+        $script:text | Should -Match "module monitoringWithTeams 'monitoring.bicep' = if \(deployMonitoring && deployLogAnalytics && deployTeamsLogicApp && \(deployGroupSyncRunbook \|\| deployExtensionAttributeRunbook\)\)"
     }
     It 'Usa un nome workspace indipendente dall Automation Account' {
         $script:text | Should -Match 'name: logAnalyticsWorkspaceName'
@@ -207,8 +208,8 @@ Describe 'Wiring in main.bicep' {
         $script:text | Should -Match 'NotificationDetailLimit: string\(notificationDetailLimit\)'
     }
     It 'Crea schedule e jobSchedule solo quando il runtime e abilitato' {
-        $script:text | Should -Match "resource schedule .* = if \(enableSchedule\)"
-        $script:text | Should -Match "resource jobSchedule .* = if \(enableSchedule\)"
+        $script:text | Should -Match "resource schedule .* = if \(enableSchedule && deployGroupSyncRunbook\)"
+        $script:text | Should -Match "resource jobSchedule .* = if \(enableSchedule && deployGroupSyncRunbook\)"
     }
     It 'Crea e collega una UAMI dedicata all Automation Account' {
         $script:text | Should -Match "Microsoft\.ManagedIdentity/userAssignedIdentities@2024-11-30"
@@ -265,6 +266,13 @@ Describe 'Wiring in main.bicep' {
     It 'Disabilita per default il runbook extension attribute nel template riusabile' {
         $script:text | Should -Match 'param deployExtensionAttributeRunbook bool = false'
         $script:text | Should -Match 'param extensionAttributeAllowValueTakeover bool = false'
+    }
+
+    It 'Consente di distribuire separatamente il runbook GroupSync' {
+        $script:text | Should -Match 'param deployGroupSyncRunbook bool = true'
+        $script:text | Should -Match "resource runbook .* = if \(deployGroupSyncRunbook\)"
+        $script:text | Should -Match "resource runtimeConfigVar .* = if \(deployGroupSyncRunbook\)"
+        $script:text | Should -Match 'monitoringPrimaryRunbookName = deployGroupSyncRunbook \? runbookName : extensionAttributeRunbookName'
     }
 }
 

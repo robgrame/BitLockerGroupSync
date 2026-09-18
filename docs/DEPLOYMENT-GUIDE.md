@@ -170,7 +170,7 @@ group, usare `-SkipProviderRegistration`.
 
 ### Runbook extensionAttribute10
 
-La versione 1.1.1 può distribuire nello stesso Automation Account il runbook
+La versione 1.2.0 può distribuire nello stesso Automation Account il runbook
 `Sync-BitLockerExtensionAttribute`, che imposta sui device Entra:
 
 - `extensionAttribute10 = "enc"` quando Intune riporta `isEncrypted=true`;
@@ -193,6 +193,31 @@ soluzioni. Con takeover disabilitato, la presenza di valori diversi da `enc`/`no
 fa fallire il job senza applicare modifiche. Il secondo runbook usa gli stessi permessi
 Graph già richiesti dalla soluzione, ha una schedule autonoma sfalsata di 30 minuti ed
 è incluso negli alert di errore e nel dead-man switch.
+
+Lo stesso comando di deployment può selezionare entrambi i runbook oppure uno
+solo:
+
+```powershell
+.\deploy.ps1 -ResourceGroupName 'ENCRYPTION-MONITORING-RG' -RunbookSelection All
+.\deploy.ps1 -ResourceGroupName 'ENCRYPTION-MONITORING-RG' -RunbookSelection GroupSync
+.\deploy.ps1 -ResourceGroupName 'ENCRYPTION-MONITORING-RG' -RunbookSelection ExtensionAttribute
+```
+
+Con `-GrantGraphPermissions` e autenticazione Managed Identity, gli app role
+Graph vengono riconciliati con la selezione: sono assegnati quelli necessari e
+revocati gli altri app role gestiti dalla soluzione. `BitlockerKey.Read.All`
+viene mantenuto solo quando il runbook GroupSync è selezionato e
+`enableKeyEscrowCheck=true`.
+
+Il flusso assistito è fail-closed: il primo passaggio Bicep mantiene schedule e
+dead-man alert disabilitati, il login amministrativo riconcilia i permessi e un
+secondo passaggio abilita il runtime. Se il grant fallisce o viene annullato, i
+job non restano collegati alle schedule.
+
+Se `-RunbookSelection` viene omesso, prevalgono i flag del file `.bicepparam`.
+Una selezione esplicita è anche dichiarativa: gli artefatti Automation del
+runbook escluso e il relativo dead-man alert secondario vengono rimossi dopo un
+deployment riuscito.
 
 Clonare la repository e creare un file locale non versionato:
 

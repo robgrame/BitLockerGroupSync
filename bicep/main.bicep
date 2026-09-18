@@ -21,6 +21,9 @@ param runbookName string = 'Sync-BitLockerComplianceGroups'
 @description('URL raw (pubblico) del file .ps1 del runbook. Es. raw.githubusercontent.com/.../Sync-BitLockerComplianceGroups.ps1')
 param runbookContentUri string
 
+@description('Se true distribuisce il runbook di sincronizzazione dei gruppi Entra.')
+param deployGroupSyncRunbook bool = true
+
 @description('Se true distribuisce il runbook che sincronizza lo stato BitLocker in un extension attribute Entra.')
 param deployExtensionAttributeRunbook bool = false
 
@@ -200,26 +203,19 @@ param notifyWebhookUrl string = ''
 @maxValue(200)
 param notificationDetailLimit int = 50
 
-@description('Se true assegna automaticamente i permessi Graph alla MI tramite deploymentScript (richiede una UAMI gia abilitata).')
-param assignGraphPermissions bool = false
-
-@description('Resource id della user-assigned managed identity (con AppRoleAssignment.ReadWrite.All) usata dal deploymentScript.')
-param permissionGrantIdentityId string = ''
-
-@description('Client id della UAMI usata dal deploymentScript.')
-param permissionGrantIdentityClientId string = ''
-
 @description('Tag applicati a tutte le risorse.')
 param tags object = {
   solution: 'BitLockerGroupSync'
   managedBy: 'bicep'
-  version: '1.1.1'
+  version: '1.2.0'
 }
 
 var graphAuthModuleUri = 'https://www.powershellgallery.com/api/v2/package/Microsoft.Graph.Authentication'
 var scheduleName = '${runbookName}-every${scheduleIntervalHours}h'
 var extensionAttributeRunbookName = 'Sync-BitLockerExtensionAttribute'
 var extensionAttributeScheduleName = '${extensionAttributeRunbookName}-every${extensionAttributeScheduleIntervalHours}h'
+var monitoringPrimaryRunbookName = deployGroupSyncRunbook ? runbookName : extensionAttributeRunbookName
+var monitoringSecondaryRunbookName = deployGroupSyncRunbook && deployExtensionAttributeRunbook ? extensionAttributeRunbookName : ''
 var runbookParameters = {
   AuthenticationMode: authenticationMode
   ManagedIdentityClientId: authenticationMode == 'ManagedIdentity' ? runtimeIdentity!.properties.clientId : ''
@@ -294,7 +290,7 @@ resource graphAuthModule 'Microsoft.Automation/automationAccounts/powerShell72Mo
   }
 }
 
-resource runbook 'Microsoft.Automation/automationAccounts/runbooks@2023-11-01' = {
+resource runbook 'Microsoft.Automation/automationAccounts/runbooks@2023-11-01' = if (deployGroupSyncRunbook) {
   parent: automationAccount
   name: runbookName
   location: location
@@ -329,7 +325,7 @@ resource extensionAttributeRunbook 'Microsoft.Automation/automationAccounts/runb
   }
 }
 
-resource schedule 'Microsoft.Automation/automationAccounts/schedules@2023-11-01' = if (enableSchedule) {
+resource schedule 'Microsoft.Automation/automationAccounts/schedules@2023-11-01' = if (enableSchedule && deployGroupSyncRunbook) {
   parent: automationAccount
   name: scheduleName
   properties: {
@@ -360,7 +356,7 @@ resource extensionAttributeSchedule 'Microsoft.Automation/automationAccounts/sch
 // (es. abilitare i gruppi opzionali) bisogna rimuovere e ricreare il jobSchedule, es.:
 //   Unregister-AzAutomationScheduledRunbook -JobScheduleId <id> -Force
 //   Register-AzAutomationScheduledRunbook -RunbookName <rb> -ScheduleName <sch> -Parameters @{...}
-resource jobSchedule 'Microsoft.Automation/automationAccounts/jobSchedules@2023-11-01' = if (enableSchedule) {
+resource jobSchedule 'Microsoft.Automation/automationAccounts/jobSchedules@2023-11-01' = if (enableSchedule && deployGroupSyncRunbook) {
   parent: automationAccount
   // Un ID nuovo evita i conflitti con la tombstone del collegamento appena eliminato.
   name: guid(automationAccount.id, runbookName, scheduleName, deployment().name)
@@ -429,7 +425,7 @@ resource graphClientSecretVar 'Microsoft.Automation/automationAccounts/variables
 
 // Configurazione non sensibile usata dagli avvii manuali. I parametri passati
 // esplicitamente (schedule, webhook o Start-AzAutomationRunbook) hanno precedenza.
-resource runtimeConfigVar 'Microsoft.Automation/automationAccounts/variables@2023-11-01' = {
+resource runtimeConfigVar 'Microsoft.Automation/automationAccounts/variables@2023-11-01' = if (deployGroupSyncRunbook) {
   parent: automationAccount
   name: 'BitLockerSyncRuntimeConfig'
   properties: {
@@ -477,18 +473,6 @@ resource diagnostics 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' 
   }
 }
 
-// Assegnazione automatica (opt-in) dei permessi Graph alla MI tramite deploymentScript.
-module graphPermissions 'graphPermissions.bicep' = if (assignGraphPermissions && authenticationMode == 'ManagedIdentity') {
-  name: 'assign-graph-permissions'
-  params: {
-    location: location
-    managedIdentityPrincipalId: runtimeIdentity!.properties.principalId
-    grantIdentityResourceId: permissionGrantIdentityId
-    grantIdentityClientId: permissionGrantIdentityClientId
-    tags: tags
-  }
-}
-
 // Logic App di notifica Teams (opt-in). Gestisce sia il common alert schema di
 // Azure Monitor sia il payload delle modifiche membership emesso dal runbook.
 module teamsLogicApp 'teams-logicapp.bicep' = if (deployTeamsLogicApp) {
@@ -502,13 +486,13 @@ module teamsLogicApp 'teams-logicapp.bicep' = if (deployTeamsLogicApp) {
 }
 
 // Monitoraggio nativo senza Logic App Teams.
-module monitoring 'monitoring.bicep' = if (deployMonitoring && deployLogAnalytics && !deployTeamsLogicApp) {
+module monitoring 'monitoring.bicep' = if (deployMonitoring && deployLogAnalytics && !deployTeamsLogicApp && (deployGroupSyncRunbook || deployExtensionAttributeRunbook)) {
   name: 'blkgm-monitoring'
   params: {
     location: location
     logAnalyticsWorkspaceId: logAnalytics.id
-    runbookName: runbookName
-    extensionAttributeRunbookName: deployExtensionAttributeRunbook ? extensionAttributeRunbookName : ''
+    runbookName: monitoringPrimaryRunbookName
+    extensionAttributeRunbookName: monitoringSecondaryRunbookName
     alertEmails: alertEmails
     alertActionWebhookUrl: alertActionWebhookUrl
     enableFailedAlert: enableFailedAlert
@@ -524,13 +508,13 @@ module monitoring 'monitoring.bicep' = if (deployMonitoring && deployLogAnalytic
 }
 
 // Monitoraggio nativo con callback protetto della Logic App Teams.
-module monitoringWithTeams 'monitoring.bicep' = if (deployMonitoring && deployLogAnalytics && deployTeamsLogicApp) {
+module monitoringWithTeams 'monitoring.bicep' = if (deployMonitoring && deployLogAnalytics && deployTeamsLogicApp && (deployGroupSyncRunbook || deployExtensionAttributeRunbook)) {
   name: 'blkgm-monitoring'
   params: {
     location: location
     logAnalyticsWorkspaceId: logAnalytics.id
-    runbookName: runbookName
-    extensionAttributeRunbookName: deployExtensionAttributeRunbook ? extensionAttributeRunbookName : ''
+    runbookName: monitoringPrimaryRunbookName
+    extensionAttributeRunbookName: monitoringSecondaryRunbookName
     alertEmails: alertEmails
     // Le condizioni dei due moduli sono allineate: la Logic App esiste sempre in questo ramo.
     #disable-next-line BCP318
@@ -560,10 +544,10 @@ output managedIdentityResourceId string = authenticationMode == 'ManagedIdentity
 output automationAccountName string = automationAccount.name
 
 @description('Nome del runbook creato.')
-output runbookName string = runbook.name
+output runbookName string = deployGroupSyncRunbook ? runbookName : ''
 
 @description('Nome della schedule creata.')
-output scheduleName string = scheduleName
+output scheduleName string = deployGroupSyncRunbook ? scheduleName : ''
 
 @description('Parametri runtime usati dalla schedule e dagli avvii orchestrati.')
 output runbookParameters object = runbookParameters

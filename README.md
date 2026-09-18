@@ -4,7 +4,7 @@
 
 ### Dynamic Entra ID security groups driven by Intune BitLocker encryption state & recovery-key escrow
 
-**Versione soluzione: 1.1.1**
+**Versione soluzione: 1.2.0**
 
 [![PowerShell](https://img.shields.io/badge/PowerShell-7.2-5391FE?style=for-the-badge&logo=powershell&logoColor=white)](https://learn.microsoft.com/powershell/)
 [![Bicep](https://img.shields.io/badge/Bicep-IaC-00BCF2?style=for-the-badge&logo=microsoftazure&logoColor=white)](https://learn.microsoft.com/azure/azure-resource-manager/bicep/)
@@ -168,6 +168,34 @@ separazione Azure/Entra, verifiche, rollback e handover, vedere
   -TenantId '<tenant-id>' `
   -SubscriptionId '<subscription-id>'
 ```
+
+La selezione dei runbook è esplicita:
+
+```powershell
+# Entrambi
+.\deploy.ps1 -ResourceGroupName 'rg-bitlocker' -RunbookSelection All
+
+# Solo gruppi Entra
+.\deploy.ps1 -ResourceGroupName 'rg-bitlocker' -RunbookSelection GroupSync
+
+# Solo extensionAttribute10
+.\deploy.ps1 -ResourceGroupName 'rg-bitlocker' -RunbookSelection ExtensionAttribute
+```
+
+Con `-GrantGraphPermissions`, lo script assegna alla Managed Identity soltanto i
+permessi Graph richiesti dalla selezione. `ExtensionAttribute` richiede
+`DeviceManagementManagedDevices.Read.All` e `Device.ReadWrite.All`; `GroupSync` e
+`All` includono i permessi per creazione gruppi e membership e aggiungono
+`BitlockerKey.Read.All` soltanto quando `enableKeyEscrowCheck=true`.
+Gli app role gestiti dalla soluzione ma non più necessari vengono revocati.
+In questa modalità il deployment crea o aggiorna prima l'infrastruttura con i
+job schedulati disabilitati, completa il grant amministrativo e solo dopo abilita
+schedule e dead-man alert. Un grant interrotto non lascia job attivi.
+
+Se `-RunbookSelection` viene omesso, sono rispettati i flag nel file
+`.bicepparam`. Quando la selezione esclude un runbook già distribuito, il deploy
+ne rimuove collegamenti schedulati, schedule, runbook e variabile runtime; rimuove
+inoltre l'alert dead-man secondario non più necessario.
 
 Lo script installa Azure CLI, Bicep e moduli mancanti, crea il resource group e
 distribuisce il Bicep senza attivare la schedule. Le comunicazioni EML per
@@ -456,10 +484,10 @@ flowchart LR
 ## 🤖 CI/CD & assegnazione permessi
 
 - ✅ **GitHub Actions** (`.github/workflows/ci.yml`): `bicep build` + **PSScriptAnalyzer** + **Pester**.
-- 🔐 **Assegnazione permessi automatica** (opt-in): `assignGraphPermissions=true` +
-  `permissionGrantIdentityId`/`permissionGrantIdentityClientId` usa un `deploymentScript` per assegnare
-  gli app role Graph (richiede una UAMI con `AppRoleAssignment.ReadWrite.All`). In alternativa, lo
-  script manuale [`Grant-GraphPermissions.ps1`](scripts/Grant-GraphPermissions.ps1).
+- 🔐 **Assegnazione permessi assistita**: `deploy.ps1 -GrantGraphPermissions`
+  riconcilia gli app role Graph sulla UAMI creata dal deployment tramite login
+  amministrativo device-code. Il target deriva dagli output del deployment e non
+  può essere sostituito da un parametro Bicep.
 
 ---
 
@@ -501,7 +529,6 @@ flowchart LR
 Nimbus.BitLockerGroupSync/
 ├── runbook/   Sync-BitLockerComplianceGroups.ps1   # 📜 Logica del runbook
 ├── bicep/     main.bicep + main.bicepparam         # 🧱 Infrastructure as Code
-│              graphPermissions.bicep               # 🔐 Modulo deploymentScript (opt-in)
 ├── scripts/   Grant-GraphPermissions.ps1           # 🔐 Assegnazione app role Graph (manuale)
 ├── tests/     Solution.Tests.ps1                   # 🧪 Test Pester
 ├── .github/workflows/ci.yml                        # 🤖 CI (bicep + PSSA + Pester)

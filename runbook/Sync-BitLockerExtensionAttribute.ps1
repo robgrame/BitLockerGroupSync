@@ -13,7 +13,7 @@
     vengono ignorati e contabilizzati nel riepilogo.
 
 .NOTES
-    Version: 1.1.1
+    Version: 1.2.0
 
     Permessi Graph application richiesti:
       - DeviceManagementManagedDevices.Read.All

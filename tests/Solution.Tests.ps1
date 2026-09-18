@@ -3,6 +3,7 @@
 BeforeAll {
     $script:root = Split-Path $PSScriptRoot -Parent
     $script:runbook = Join-Path $root 'runbook\Sync-BitLockerComplianceGroups.ps1'
+    $script:extensionAttributeRunbook = Join-Path $root 'runbook\Sync-BitLockerExtensionAttribute.ps1'
     $script:grant = Join-Path $root 'scripts\Grant-GraphPermissions.ps1'
     $script:mailTemplate = Join-Path $root 'templates\Entra-Permissions-Request.eml'
     $script:deploy = Join-Path $root 'deploy.ps1'
@@ -24,8 +25,76 @@ Describe 'Sintassi PowerShell' {
     It 'Il runbook non ha errori di parsing' {
         (Test-PsSyntax -Path $script:runbook).Count | Should -Be 0
     }
+    It 'Il runbook extension attribute non ha errori di parsing' {
+        (Test-PsSyntax -Path $script:extensionAttributeRunbook).Count | Should -Be 0
+    }
     It 'Grant-GraphPermissions non ha errori di parsing' {
         (Test-PsSyntax -Path $script:grant).Count | Should -Be 0
+    }
+
+    Describe 'Runbook extension attribute' {
+        BeforeAll {
+            $script:extensionText = Get-Content $script:extensionAttributeRunbook -Raw
+            $ast = Get-Ast -Path $script:extensionAttributeRunbook
+            $script:extensionParamNames = $ast.ParamBlock.Parameters.Name.VariablePath.UserPath
+        }
+
+        It 'Espone solo il parametro sicuro WhatIfOnly' {
+            $script:extensionParamNames | Should -Be @('WhatIfOnly')
+        }
+
+        It 'Usa extensionAttribute10 con i valori enc e notenc come default' {
+            $script:extensionText | Should -Match "\`$script:ExtensionAttributeName = 'extensionAttribute10'"
+            $script:extensionText | Should -Match "\`$script:EncryptedValue = 'enc'"
+            $script:extensionText | Should -Match "\`$script:NotEncryptedValue = 'notenc'"
+        }
+
+        It 'Carica configurazione protetta senza consentire override dai parametri job' {
+            $script:extensionText | Should -Match 'BitLockerExtensionAttributeRuntimeConfig'
+            $script:extensionText | Should -Match '\$config -is \[System\.Collections\.IDictionary\]'
+            $script:extensionText | Should -Match 'AllowValueTakeover'
+            $script:extensionText | Should -Match 'Automation Variable obbligatoria'
+            $script:extensionText | Should -Match 'Chiavi mancanti'
+            $script:extensionText | Should -Not -Match '\[string\]\$ExtensionAttributeName'
+        }
+
+        It 'Legge isEncrypted da Intune e extensionAttributes da Entra' {
+            $script:extensionText | Should -Match 'deviceManagement/managedDevices'
+            $script:extensionText | Should -Match 'isEncrypted'
+            $script:extensionText | Should -Match 'devices\?\`?\$select=id,deviceId,displayName,extensionAttributes'
+        }
+
+        It 'Aggiorna i device tramite batch PATCH idempotente' {
+            $script:extensionText | Should -Match "method = 'PATCH'"
+            $script:extensionText | Should -Match 'extensionAttributes'
+            $script:extensionText | Should -Match '\$currentValue -eq \$desiredValue'
+            $script:extensionText | Should -Match '\[EXTENSION_ATTRIBUTE_UPDATE\]'
+            $script:extensionText | Should -Match '\[EXTENSION_ATTRIBUTE_CYCLE\]'
+            $script:extensionText | Should -Match '\[AllowEmptyCollection\(\)\]'
+            $script:extensionText | Should -Match 'if \(\$updates\.Count -gt 0\)'
+        }
+
+        It 'Ignora stati di cifratura null e device stale' {
+            $script:extensionText | Should -Match '\$null -eq \$device\.isEncrypted'
+            $script:extensionText | Should -Match 'retirePending'
+            $script:extensionText | Should -Match 'wipePending'
+        }
+
+        It 'Supporta tutte le modalita di autenticazione esistenti' {
+            $script:extensionText | Should -Match 'Connect-MgGraph -Identity -ClientId \$ManagedIdentityClientId'
+            $script:extensionText | Should -Match 'Get-AutomationCertificate'
+            $script:extensionText | Should -Match 'ClientSecretCredential'
+        }
+
+        It 'Rispetta sia WhatIfOnly sia il parametro comune WhatIf' {
+            $script:extensionText | Should -Match 'if \(\$WhatIfPreference\) \{ \$WhatIfOnly = \$true \}'
+        }
+
+        It 'Blocca valori non gestiti senza consenso esplicito al takeover' {
+            $script:extensionText | Should -Match '\$currentValue -notin @\(\$EncryptedValue, \$NotEncryptedValue\)'
+            $script:extensionText | Should -Match '-not \$AllowValueTakeover'
+            $script:extensionText | Should -Match 'Nessuna modifica applicata'
+        }
     }
     It 'deploy.ps1 non ha errori di parsing' {
         (Test-PsSyntax -Path $script:deploy).Count | Should -Be 0
@@ -250,6 +319,7 @@ Describe 'Orchestrazione del deployment' {
         $script:deployText | Should -Match '\$_.ScheduleName -eq \$ScheduleName'
         $script:deployText | Should -Match 'Get-AzResource -ResourceId \$jobScheduleResourceId'
         $script:deployText | Should -Match 'Timeout durante la rimozione del jobSchedule'
+        $script:deployText | Should -Match '-RunbookName \$configuredExtensionAttributeRunbookName\r?\n\r?\nWrite-Host'
     }
     It 'Usa una frequenza oraria anche come fallback del deploy' {
         $script:deployText | Should -Match '\$configuredScheduleIntervalHours[\s\S]*else \{\s*1\s*\}'

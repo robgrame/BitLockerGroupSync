@@ -168,6 +168,32 @@ group, usare `-SkipProviderRegistration`.
 
 ## 5. Preparazione dei parametri cliente
 
+### Runbook extensionAttribute10
+
+La versione 1.1.0 può distribuire nello stesso Automation Account il runbook
+`Sync-BitLockerExtensionAttribute`, che imposta sui device Entra:
+
+- `extensionAttribute10 = "enc"` quando Intune riporta `isEncrypted=true`;
+- `extensionAttribute10 = "notenc"` quando Intune riporta `isEncrypted=false`.
+
+La funzionalità è disabilitata nel template riusabile e deve essere abilitata
+esplicitamente nel file parametri:
+
+```bicep
+param deployExtensionAttributeRunbook = true
+param extensionAttributeName = 'extensionAttribute10'
+param extensionAttributeEncryptedValue = 'enc'
+param extensionAttributeNotEncryptedValue = 'notenc'
+param extensionAttributeAllowValueTakeover = false
+param clearManagedValuesForOutOfScopeDevices = false
+```
+
+Prima dell'attivazione verificare che `extensionAttribute10` non sia gestito da altre
+soluzioni. Con takeover disabilitato, la presenza di valori diversi da `enc`/`notenc`
+fa fallire il job senza applicare modifiche. Il secondo runbook usa gli stessi permessi
+Graph già richiesti dalla soluzione, ha una schedule autonoma sfalsata di 30 minuti ed
+è incluso negli alert di errore e nel dead-man switch.
+
 Clonare la repository e creare un file locale non versionato:
 
 ```powershell

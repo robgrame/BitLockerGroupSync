@@ -11,6 +11,14 @@ param runbookName = 'Sync-BitLockerComplianceGroups'
 
 // URL raw del runbook nel repo pubblico (branch main).
 param runbookContentUri = 'https://raw.githubusercontent.com/robgrame/Nimbus.BitLockerGroupSync/main/runbook/Sync-BitLockerComplianceGroups.ps1'
+param deployExtensionAttributeRunbook = true
+param extensionAttributeRunbookContentUri = 'https://raw.githubusercontent.com/robgrame/Nimbus.BitLockerGroupSync/main/runbook/Sync-BitLockerExtensionAttribute.ps1'
+param extensionAttributeName = 'extensionAttribute10'
+param extensionAttributeEncryptedValue = 'enc'
+param extensionAttributeNotEncryptedValue = 'notenc'
+param extensionAttributeAllowValueTakeover = false
+param clearManagedValuesForOutOfScopeDevices = false
+param extensionAttributeScheduleIntervalHours = 1
 
 param groupPrefix = ''
 
@@ -75,4 +83,5 @@ param tags = {
   solution: 'BitLockerGroupSync'
   managedBy: 'bicep'
   environment: 'prod'
+  version: '1.1.0'
 }

@@ -100,6 +100,8 @@
     configurata nel file .bicepparam.
 
 .NOTES
+    Version: 1.1.0
+
     Per visualizzare la guida completa:
         Get-Help .\deploy.ps1 -Full
 #>
@@ -121,6 +123,7 @@ param(
     [Parameter()][switch]$PermissionsConfirmed,
     [Parameter()][switch]$SkipWhatIf,
     [Parameter()][switch]$StartJobNow,
+    [Parameter()][switch]$StartExtensionAttributeJobNow,
     [Parameter()][switch]$CreateTriggerWebhook
 )
 
@@ -272,7 +275,7 @@ function Remove-ExistingJobScheduleLink {
         [Parameter(Mandatory)][string]$ResourceGroupName,
         [Parameter(Mandatory)][string]$AutomationAccountName,
         [Parameter(Mandatory)][string]$RunbookName,
-        [Parameter(Mandatory)][string]$ScheduleName
+        [Parameter()][string]$ScheduleName
     )
 
     $account = Get-AzAutomationAccount -ResourceGroupName $ResourceGroupName `
@@ -284,7 +287,8 @@ function Remove-ExistingJobScheduleLink {
             -AutomationAccountName $AutomationAccountName `
             -ErrorAction Stop |
         Where-Object {
-            $_.RunbookName -eq $RunbookName -and $_.ScheduleName -eq $ScheduleName
+            $_.RunbookName -eq $RunbookName -and
+            ([string]::IsNullOrWhiteSpace($ScheduleName) -or $_.ScheduleName -eq $ScheduleName)
         })
 
     foreach ($link in $links) {
@@ -383,6 +387,12 @@ function ConvertTo-DirectRunbookHashtable {
     return $result
 }
 
+function ConvertTo-DirectExtensionAttributeRunbookHashtable {
+    param([Parameter(Mandatory)][hashtable]$Parameters)
+
+    return $Parameters.Clone()
+}
+
 $resolvedParameterFile = (Resolve-Path -LiteralPath $ParameterFile -ErrorAction Stop).Path
 
 if (-not $SkipBootstrap) { Initialize-DeploymentTooling }
@@ -443,6 +453,13 @@ else {
     1
 }
 $configuredScheduleName = "$configuredRunbookName-every$($configuredScheduleIntervalHours)h"
+$deployExtensionAttributeRunbook = if ($parameterValues.deployExtensionAttributeRunbook) {
+    [bool]$parameterValues.deployExtensionAttributeRunbook.value
+}
+else {
+    $false
+}
+$configuredExtensionAttributeRunbookName = 'Sync-BitLockerExtensionAttribute'
 
 if ($GrantGraphPermissions -and $AuthenticationMode -ne 'ManagedIdentity') {
     throw '-GrantGraphPermissions e supportato solo con AuthenticationMode=ManagedIdentity.'
@@ -567,6 +584,11 @@ Remove-ExistingJobScheduleLink `
     -RunbookName $configuredRunbookName `
     -ScheduleName $configuredScheduleName
 
+Remove-ExistingJobScheduleLink `
+    -ResourceGroupName $ResourceGroupName `
+    -AutomationAccountName $configuredAutomationAccountName `
+    -RunbookName $configuredExtensionAttributeRunbookName
+
 Write-Host '==> Deploy Bicep...' -ForegroundColor Cyan
 $deployment = New-AzResourceGroupDeployment @templateParams -Name $deploymentName -Verbose
 
@@ -577,6 +599,11 @@ $aaName = $deployment.Outputs.automationAccountName.Value
 $rbName = $deployment.Outputs.runbookName.Value
 $runbookParameters = ConvertTo-StringHashtable -InputObject $deployment.Outputs.runbookParameters.Value
 $directRunbookParameters = ConvertTo-DirectRunbookHashtable -Parameters $runbookParameters
+$extensionAttributeRunbookName = [string]$deployment.Outputs.extensionAttributeRunbookName.Value
+$extensionAttributeRunbookParameters = ConvertTo-StringHashtable `
+    -InputObject $deployment.Outputs.extensionAttributeRunbookParameters.Value
+$directExtensionAttributeRunbookParameters = ConvertTo-DirectExtensionAttributeRunbookHashtable `
+    -Parameters $extensionAttributeRunbookParameters
 if ($AuthenticationMode -eq 'ManagedIdentity') {
     Write-Host "    UAMI resourceId:  $managedIdentityResourceId" -ForegroundColor Green
     Write-Host "    UAMI clientId:    $managedIdentityClientId" -ForegroundColor Green
@@ -652,6 +679,21 @@ if ($StartJobNow) {
         -ResourceGroupName $ResourceGroupName `
         -Name $rbName `
         -Parameters $directRunbookParameters | Out-Null
+}
+
+if ($StartExtensionAttributeJobNow) {
+    if (-not ($GrantGraphPermissions -or $PermissionsConfirmed)) {
+        throw 'Avvio runbook extension attribute bloccato: usare -PermissionsConfirmed dopo la concessione delle permission Entra.'
+    }
+    if (-not $deployExtensionAttributeRunbook) {
+        throw 'Avvio runbook extension attribute bloccato: deployExtensionAttributeRunbook=false.'
+    }
+    Write-Host '==> Avvio job del runbook extension attribute...' -ForegroundColor Cyan
+    Start-AzAutomationRunbook `
+        -AutomationAccountName $aaName `
+        -ResourceGroupName $ResourceGroupName `
+        -Name $extensionAttributeRunbookName `
+        -Parameters $directExtensionAttributeRunbookParameters | Out-Null
 }
 
 Write-Host '==> Deploy completato.' -ForegroundColor Green

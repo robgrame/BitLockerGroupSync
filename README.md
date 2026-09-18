@@ -4,6 +4,8 @@
 
 ### Dynamic Entra ID security groups driven by Intune BitLocker encryption state & recovery-key escrow
 
+**Versione soluzione: 1.1.0**
+
 [![PowerShell](https://img.shields.io/badge/PowerShell-7.2-5391FE?style=for-the-badge&logo=powershell&logoColor=white)](https://learn.microsoft.com/powershell/)
 [![Bicep](https://img.shields.io/badge/Bicep-IaC-00BCF2?style=for-the-badge&logo=microsoftazure&logoColor=white)](https://learn.microsoft.com/azure/azure-resource-manager/bicep/)
 [![Azure Automation](https://img.shields.io/badge/Azure_Automation-Runbook-0078D4?style=for-the-badge&logo=microsoftazure&logoColor=white)](https://learn.microsoft.com/azure/automation/)
@@ -42,6 +44,27 @@ Managed Identity e certificato sono le modalità raccomandate.
 > [!NOTE]
 > I gruppi dinamici di Entra ID non sanno leggere lo stato di cifratura Intune né la
 > presenza di una recovery key. Questo runbook colma esattamente quel gap.
+
+La stessa distribuzione include un secondo runbook, **`Sync-BitLockerExtensionAttribute`**,
+che replica lo stato `isEncrypted` nel device Entra:
+
+| Stato Intune | Attributo Entra |
+|---|---|
+| `isEncrypted = true` | `extensionAttribute10 = "enc"` |
+| `isEncrypted = false` | `extensionAttribute10 = "notenc"` |
+
+Il secondo runbook usa lo stesso Automation Account e la stessa identità, ma dispone di
+schedule e configurazione runtime autonome. Aggiorna solo i valori non conformi e ignora
+device stale, non risolti o con stato `isEncrypted` nullo. La schedule parte 30 minuti
+dopo quella del runbook gruppi per evitare picchi simultanei su Graph.
+
+Per sicurezza la funzionalità è disabilitata nel template Bicep e deve essere attivata
+esplicitamente. Se `extensionAttribute10` contiene valori diversi da `enc`/`notenc`, il
+runbook fallisce senza applicare modifiche, salvo consenso esplicito tramite
+`extensionAttributeAllowValueTakeover=true` in un file parametri locale deliberatamente
+selezionato. I device usciti dal perimetro mantengono
+il valore precedente; la pulizia opzionale si abilita con
+`clearManagedValuesForOutOfScopeDevices=true`.
 
 ---
 
@@ -184,6 +207,14 @@ pwsh ./scripts/Grant-GraphPermissions.ps1 -ManagedIdentityPrincipalId <principal
 | `location` | `westeurope` | Region delle risorse |
 | `automationAccountName` | `aa-bitlocker-groupsync` | Nome Automation Account |
 | `runbookContentUri` | *(raw GitHub URL)* | Sorgente del runbook `.ps1` |
+| `deployExtensionAttributeRunbook` | `false` | Distribuisce il runbook di sincronizzazione extension attribute |
+| `extensionAttributeRunbookContentUri` | *(raw GitHub URL)* | Sorgente del secondo runbook |
+| `extensionAttributeName` | `extensionAttribute10` | Attributo Entra da aggiornare |
+| `extensionAttributeEncryptedValue` | `enc` | Valore per device cifrati |
+| `extensionAttributeNotEncryptedValue` | `notenc` | Valore per device non cifrati |
+| `extensionAttributeAllowValueTakeover` | `false` | Consenso esplicito a sovrascrivere valori non gestiti già presenti |
+| `clearManagedValuesForOutOfScopeDevices` | `false` | Azzera `enc`/`notenc` sui device non più nel perimetro |
+| `extensionAttributeScheduleIntervalHours` | `1` | Cadenza autonoma del secondo runbook |
 | `groupPrefix` | *(vuoto)* | Prefisso opzionale per il naming dei gruppi |
 | `encryptedGroupName` | `Intune - BitLocker Encrypted` | Nome esplicito gruppo Encrypted |
 | `notEncryptedGroupName` | *(vuoto → `<prefix>-NotEncrypted`)* | Nome esplicito gruppo NotEncrypted |

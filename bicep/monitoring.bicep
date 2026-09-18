@@ -18,6 +18,9 @@ param logAnalyticsWorkspaceId string
 @description('Nome del runbook da monitorare (usato nei filtri KQL).')
 param runbookName string
 
+@description('Secondo runbook opzionale da includere negli alert.')
+param extensionAttributeRunbookName string = ''
+
 @description('Indirizzi email a cui inviare gli alert.')
 param alertEmails array
 
@@ -107,7 +110,7 @@ resource failedAlert 'Microsoft.Insights/scheduledQueryRules@2023-03-15-preview'
 AzureDiagnostics
 | where ResourceProvider == "MICROSOFT.AUTOMATION"
 | where Category == "JobLogs"
-| where RunbookName_s == "${runbookName}"
+| where RunbookName_s in ("${runbookName}", "${extensionAttributeRunbookName}")
 | where ResultType in ("Failed", "Suspended", "Stopped")
 '''
           timeAggregation: 'Count'
@@ -150,7 +153,7 @@ resource errorAlert 'Microsoft.Insights/scheduledQueryRules@2023-03-15-preview' 
 AzureDiagnostics
 | where ResourceProvider == "MICROSOFT.AUTOMATION"
 | where Category == "JobStreams"
-| where RunbookName_s == "${runbookName}"
+| where RunbookName_s in ("${runbookName}", "${extensionAttributeRunbookName}")
 | where StreamType_s == "Error" or ResultDescription contains "[ERROR]"
 '''
           timeAggregation: 'Count'
@@ -205,6 +208,48 @@ AzureDiagnostics
 | where ResourceProvider == "MICROSOFT.AUTOMATION"
 | where Category == "JobLogs"
 | where RunbookName_s == "${runbookName}"
+| where ResultType == "Completed"
+| summarize Completed = count()
+'''
+          timeAggregation: 'Total'
+          metricMeasureColumn: 'Completed'
+          operator: 'LessThan'
+          threshold: 1
+          failingPeriods: {
+            numberOfEvaluationPeriods: 1
+            minFailingPeriodsToAlert: 1
+          }
+        }
+      ]
+    }
+    autoMitigate: true
+    actions: {
+      actionGroups: [ actionGroup.id ]
+    }
+  }
+}
+
+resource extensionAttributeDeadmanAlert 'Microsoft.Insights/scheduledQueryRules@2023-03-15-preview' = if (enableDeadmanAlert && !empty(extensionAttributeRunbookName)) {
+  name: 'alert-blkgm-extension-no-success'
+  location: location
+  tags: tags
+  kind: 'LogAlert'
+  properties: {
+    displayName: '[BitLockerSync] Extension attribute: nessuna run completata'
+    description: 'Nessun job Completed del runbook ${extensionAttributeRunbookName} nelle ultime ${deadmanWindowHours} ore.'
+    severity: 1
+    enabled: true
+    evaluationFrequency: 'PT1H'
+    windowSize: 'PT${deadmanWindowHours}H'
+    scopes: [ logAnalyticsWorkspaceId ]
+    criteria: {
+      allOf: [
+        {
+          query: '''
+AzureDiagnostics
+| where ResourceProvider == "MICROSOFT.AUTOMATION"
+| where Category == "JobLogs"
+| where RunbookName_s == "${extensionAttributeRunbookName}"
 | where ResultType == "Completed"
 | summarize Completed = count()
 '''

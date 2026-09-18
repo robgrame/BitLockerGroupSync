@@ -35,6 +35,8 @@
       - Notifica opzionale (webhook) del riepilogo a ogni run.
 
 .NOTES
+    Version: 1.0.1
+
     Permessi Graph (application) richiesti sulla managed identity (least privilege):
       - DeviceManagementManagedDevices.Read.All
       - BitlockerKey.Read.All
@@ -372,11 +374,11 @@ function Invoke-GraphBatch {
 
     if ($Requests.Count -eq 0) { return }
     $successfulRequests = [System.Collections.Generic.List[object]]::new()
-    $chunks = for ($i = 0; $i -lt $Requests.Count; $i += 20) { , ($Requests[$i..([math]::Min($i + 19, $Requests.Count - 1))]) }
 
-    foreach ($chunk in $chunks) {
+    for ($i = 0; $i -lt $Requests.Count; $i += 20) {
+        $chunk = @($Requests[$i..([math]::Min($i + 19, $Requests.Count - 1))])
         # Mappa id-subrequest -> richiesta originale, per poter ritentare i falliti.
-        $pending = @{}
+        $pending = [ordered]@{}
         $n = 0
         foreach ($r in $chunk) { $n++; $pending["$n"] = $r }
 
@@ -393,7 +395,7 @@ function Invoke-GraphBatch {
             $body = @{ requests = @($batchRequests) }
             $resp = Invoke-GraphApi -Uri 'https://graph.microsoft.com/v1.0/$batch' -Method POST -Body $body
 
-            $retry = @{}
+            $retry = [ordered]@{}
             foreach ($res in $resp.Value[0].responses) {
                 if ($res.status -lt 400 -or $res.status -eq 404) {
                     $successfulRequests.Add($pending["$($res.id)"])

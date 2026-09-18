@@ -44,7 +44,9 @@ Describe 'Default cliente dei parametri Bicep' {
     }
 
     It 'Usa nomi di asset e tag senza branding Nimbus' {
-        $parameterWithoutSourceUri = $script:parameterText -replace "(?m)^param runbookContentUri = .*\r?\n", ''
+        $parameterWithoutSourceUri = $script:parameterText `
+            -replace "(?m)^param runbookContentUri = .*\r?\n", '' `
+            -replace "(?m)^param extensionAttributeRunbookContentUri = .*\r?\n", ''
         $parameterWithoutSourceUri | Should -Not -Match 'Nimbus'
         $script:parameterText | Should -Match "certificateAssetName = 'GraphAuthCertificate'"
         $script:parameterText | Should -Match "graphCredentialVariableName = 'GraphClientSecret'"
@@ -72,6 +74,11 @@ Describe 'Modulo monitoring.bicep' {
     }
     It 'La regola Error filtra lo stream Error' {
         $script:text | Should -Match 'StreamType_s == "Error"'
+    }
+    It 'Include il runbook extension attribute negli alert e nel dead-man dedicato' {
+        $script:text | Should -Match 'param extensionAttributeRunbookName string'
+        $script:text | Should -Match 'RunbookName_s in \("\$\{runbookName\}", "\$\{extensionAttributeRunbookName\}"\)'
+        $script:text | Should -Match 'alert-blkgm-extension-no-success'
     }
     It 'Il dead-man''s switch usa metricMeasureColumn Completed con LessThan 1' {
         $script:text | Should -Match "metricMeasureColumn: 'Completed'"
@@ -157,6 +164,14 @@ Describe 'Wiring in main.bicep' {
         @{ Name = 'notificationDetailLimit' }
         @{ Name = 'enableSchedule' }
         @{ Name = 'authenticationMode' }
+        @{ Name = 'deployExtensionAttributeRunbook' }
+        @{ Name = 'extensionAttributeRunbookContentUri' }
+        @{ Name = 'extensionAttributeName' }
+        @{ Name = 'extensionAttributeEncryptedValue' }
+        @{ Name = 'extensionAttributeNotEncryptedValue' }
+        @{ Name = 'extensionAttributeAllowValueTakeover' }
+        @{ Name = 'clearManagedValuesForOutOfScopeDevices' }
+        @{ Name = 'extensionAttributeScheduleIntervalHours' }
         @{ Name = 'managedIdentityName' }
         @{ Name = 'appTenantId' }
         @{ Name = 'appClientId' }
@@ -231,6 +246,25 @@ Describe 'Wiring in main.bicep' {
         $script:text | Should -Match "name: 'BitLockerSyncRuntimeConfig'"
         $script:text | Should -Match 'value: string\(runbookParameters\)'
         $script:text | Should -Match 'isEncrypted: false'
+    }
+    It 'Distribuisce il runbook extension attribute con schedule e configurazione autonome' {
+        $script:text | Should -Match "var extensionAttributeRunbookName = 'Sync-BitLockerExtensionAttribute'"
+        $script:text | Should -Match "name: extensionAttributeRunbookName"
+        $script:text | Should -Match "uri: extensionAttributeRunbookContentUri"
+        $script:text | Should -Match "name: extensionAttributeScheduleName"
+        $script:text | Should -Match 'var extensionAttributeRunbookParameters = \{\}'
+        $script:text | Should -Match 'var extensionAttributeRuntimeConfig = \{'
+        $script:text | Should -Match "ExtensionAttributeName: extensionAttributeName"
+        $script:text | Should -Match "EncryptedValue: extensionAttributeEncryptedValue"
+        $script:text | Should -Match "NotEncryptedValue: extensionAttributeNotEncryptedValue"
+        $script:text | Should -Match "AllowValueTakeover: extensionAttributeAllowValueTakeover"
+        $script:text | Should -Match "name: 'BitLockerExtensionAttributeRuntimeConfig'"
+        $script:text | Should -Match "startTime: dateTimeAdd\(scheduleStartTime, 'PT30M'\)"
+    }
+
+    It 'Disabilita per default il runbook extension attribute nel template riusabile' {
+        $script:text | Should -Match 'param deployExtensionAttributeRunbook bool = false'
+        $script:text | Should -Match 'param extensionAttributeAllowValueTakeover bool = false'
     }
 }
 

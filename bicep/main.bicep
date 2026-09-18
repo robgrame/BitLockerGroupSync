@@ -21,6 +21,49 @@ param runbookName string = 'Sync-BitLockerComplianceGroups'
 @description('URL raw (pubblico) del file .ps1 del runbook. Es. raw.githubusercontent.com/.../Sync-BitLockerComplianceGroups.ps1')
 param runbookContentUri string
 
+@description('Se true distribuisce il runbook che sincronizza lo stato BitLocker in un extension attribute Entra.')
+param deployExtensionAttributeRunbook bool = false
+
+@description('URL raw (pubblico) del runbook di sincronizzazione extension attribute.')
+param extensionAttributeRunbookContentUri string = 'https://raw.githubusercontent.com/robgrame/Nimbus.BitLockerGroupSync/main/runbook/Sync-BitLockerExtensionAttribute.ps1'
+
+@description('Extension attribute Entra aggiornato dal secondo runbook.')
+@allowed([
+  'extensionAttribute1'
+  'extensionAttribute2'
+  'extensionAttribute3'
+  'extensionAttribute4'
+  'extensionAttribute5'
+  'extensionAttribute6'
+  'extensionAttribute7'
+  'extensionAttribute8'
+  'extensionAttribute9'
+  'extensionAttribute10'
+  'extensionAttribute11'
+  'extensionAttribute12'
+  'extensionAttribute13'
+  'extensionAttribute14'
+  'extensionAttribute15'
+])
+param extensionAttributeName string = 'extensionAttribute10'
+
+@description('Valore assegnato ai device cifrati.')
+param extensionAttributeEncryptedValue string = 'enc'
+
+@description('Valore assegnato ai device non cifrati.')
+param extensionAttributeNotEncryptedValue string = 'notenc'
+
+@description('Consente di sovrascrivere valori non vuoti diversi da quelli gestiti. Abilitare solo dopo verifica ownership dell\'attributo.')
+param extensionAttributeAllowValueTakeover bool = false
+
+@description('Se true azzera i valori gestiti sui device che non rientrano piu nel perimetro Intune/OS.')
+param clearManagedValuesForOutOfScopeDevices bool = false
+
+@description('Intervallo in ore del runbook extension attribute.')
+@minValue(1)
+@maxValue(24)
+param extensionAttributeScheduleIntervalHours int = 1
+
 @description('Prefisso per il naming dei gruppi Entra gestiti dal runbook (usato quando i nomi espliciti sono vuoti).')
 param groupPrefix string = ''
 
@@ -170,10 +213,13 @@ param permissionGrantIdentityClientId string = ''
 param tags object = {
   solution: 'BitLockerGroupSync'
   managedBy: 'bicep'
+  version: '1.1.0'
 }
 
 var graphAuthModuleUri = 'https://www.powershellgallery.com/api/v2/package/Microsoft.Graph.Authentication'
 var scheduleName = '${runbookName}-every${scheduleIntervalHours}h'
+var extensionAttributeRunbookName = 'Sync-BitLockerExtensionAttribute'
+var extensionAttributeScheduleName = '${extensionAttributeRunbookName}-every${extensionAttributeScheduleIntervalHours}h'
 var runbookParameters = {
   AuthenticationMode: authenticationMode
   ManagedIdentityClientId: authenticationMode == 'ManagedIdentity' ? runtimeIdentity!.properties.clientId : ''
@@ -194,6 +240,21 @@ var runbookParameters = {
   KeyMissingAlertThreshold: string(keyMissingAlertThreshold)
   NotificationDetailLimit: string(notificationDetailLimit)
   EnableMembershipDetailLogging: string(enableMembershipDetailLogging)
+}
+var extensionAttributeRunbookParameters = {}
+var extensionAttributeRuntimeConfig = {
+  AuthenticationMode: authenticationMode
+  ManagedIdentityClientId: authenticationMode == 'ManagedIdentity' ? runtimeIdentity!.properties.clientId : ''
+  AppTenantId: appTenantId
+  AppClientId: appClientId
+  CertificateAssetName: certificateAssetName
+  ClientSecretVariableName: graphCredentialVariableName
+  ExtensionAttributeName: extensionAttributeName
+  EncryptedValue: extensionAttributeEncryptedValue
+  NotEncryptedValue: extensionAttributeNotEncryptedValue
+  TargetOperatingSystem: targetOperatingSystem
+  AllowValueTakeover: extensionAttributeAllowValueTakeover
+  ClearManagedValuesForOutOfScopeDevices: clearManagedValuesForOutOfScopeDevices
 }
 
 resource runtimeIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2024-11-30' = if (authenticationMode == 'ManagedIdentity') {
@@ -251,6 +312,23 @@ resource runbook 'Microsoft.Automation/automationAccounts/runbooks@2023-11-01' =
   }
 }
 
+resource extensionAttributeRunbook 'Microsoft.Automation/automationAccounts/runbooks@2023-11-01' = if (deployExtensionAttributeRunbook) {
+  parent: automationAccount
+  name: extensionAttributeRunbookName
+  location: location
+  tags: tags
+  properties: {
+    runbookType: 'PowerShell72'
+    logProgress: true
+    logVerbose: true
+    description: 'Sincronizza isEncrypted di Intune in un extension attribute dei device Entra.'
+    publishContentLink: {
+      uri: extensionAttributeRunbookContentUri
+      version: deployment().name
+    }
+  }
+}
+
 resource schedule 'Microsoft.Automation/automationAccounts/schedules@2023-11-01' = if (enableSchedule) {
   parent: automationAccount
   name: scheduleName
@@ -258,6 +336,18 @@ resource schedule 'Microsoft.Automation/automationAccounts/schedules@2023-11-01'
     description: 'Esecuzione ricorrente di ${runbookName}.'
     startTime: scheduleStartTime
     interval: scheduleIntervalHours
+    frequency: 'Hour'
+    timeZone: 'UTC'
+  }
+}
+
+resource extensionAttributeSchedule 'Microsoft.Automation/automationAccounts/schedules@2023-11-01' = if (enableSchedule && deployExtensionAttributeRunbook) {
+  parent: automationAccount
+  name: extensionAttributeScheduleName
+  properties: {
+    description: 'Esecuzione ricorrente di ${extensionAttributeRunbookName}.'
+    startTime: dateTimeAdd(scheduleStartTime, 'PT30M')
+    interval: extensionAttributeScheduleIntervalHours
     frequency: 'Hour'
     timeZone: 'UTC'
   }
@@ -286,6 +376,24 @@ resource jobSchedule 'Microsoft.Automation/automationAccounts/jobSchedules@2023-
   dependsOn: [
     runbook
     schedule
+  ]
+}
+
+resource extensionAttributeJobSchedule 'Microsoft.Automation/automationAccounts/jobSchedules@2023-11-01' = if (enableSchedule && deployExtensionAttributeRunbook) {
+  parent: automationAccount
+  name: guid(automationAccount.id, extensionAttributeRunbookName, extensionAttributeScheduleName, deployment().name)
+  properties: {
+    runbook: {
+      name: extensionAttributeRunbookName
+    }
+    schedule: {
+      name: extensionAttributeScheduleName
+    }
+    parameters: extensionAttributeRunbookParameters
+  }
+  dependsOn: [
+    extensionAttributeRunbook
+    extensionAttributeSchedule
   ]
 }
 
@@ -327,6 +435,15 @@ resource runtimeConfigVar 'Microsoft.Automation/automationAccounts/variables@202
   properties: {
     isEncrypted: false
     value: string(runbookParameters)
+  }
+}
+
+resource extensionAttributeRuntimeConfigVar 'Microsoft.Automation/automationAccounts/variables@2023-11-01' = if (deployExtensionAttributeRunbook) {
+  parent: automationAccount
+  name: 'BitLockerExtensionAttributeRuntimeConfig'
+  properties: {
+    isEncrypted: false
+    value: string(extensionAttributeRuntimeConfig)
   }
 }
 
@@ -391,6 +508,7 @@ module monitoring 'monitoring.bicep' = if (deployMonitoring && deployLogAnalytic
     location: location
     logAnalyticsWorkspaceId: logAnalytics.id
     runbookName: runbookName
+    extensionAttributeRunbookName: deployExtensionAttributeRunbook ? extensionAttributeRunbookName : ''
     alertEmails: alertEmails
     alertActionWebhookUrl: alertActionWebhookUrl
     enableFailedAlert: enableFailedAlert
@@ -412,6 +530,7 @@ module monitoringWithTeams 'monitoring.bicep' = if (deployMonitoring && deployLo
     location: location
     logAnalyticsWorkspaceId: logAnalytics.id
     runbookName: runbookName
+    extensionAttributeRunbookName: deployExtensionAttributeRunbook ? extensionAttributeRunbookName : ''
     alertEmails: alertEmails
     // Le condizioni dei due moduli sono allineate: la Logic App esiste sempre in questo ramo.
     #disable-next-line BCP318
@@ -448,3 +567,12 @@ output scheduleName string = scheduleName
 
 @description('Parametri runtime usati dalla schedule e dagli avvii orchestrati.')
 output runbookParameters object = runbookParameters
+
+@description('Nome del runbook di sincronizzazione extension attribute.')
+output extensionAttributeRunbookName string = deployExtensionAttributeRunbook ? extensionAttributeRunbookName : ''
+
+@description('Nome della schedule del runbook extension attribute.')
+output extensionAttributeScheduleName string = deployExtensionAttributeRunbook ? extensionAttributeScheduleName : ''
+
+@description('Parametri runtime del runbook extension attribute.')
+output extensionAttributeRunbookParameters object = extensionAttributeRunbookParameters

@@ -84,19 +84,23 @@ Describe 'Import-RuntimeConfiguration' {
         $script:ClearManagedValuesForOutOfScopeDevices = $false
         Mock Write-Log {}
         Mock Get-AutomationVariable {
-            @{
-                ExtensionAttributeName = 'extensionAttribute9'
-                EncryptedValue = 'encrypted'
-                NotEncryptedValue = 'not-encrypted'
-                TargetOperatingSystem = 'Windows'
-                AuthenticationMode = 'ManagedIdentity'
-                ManagedIdentityClientId = 'client-id'
-                AppTenantId = ''
-                AppClientId = ''
-                CertificateAssetName = 'GraphAuthCertificate'
-                ClientSecretVariableName = 'GraphClientSecret'
-                AllowValueTakeover = $true
-                ClearManagedValuesForOutOfScopeDevices = $true
+            switch ($Name) {
+                'BitLockerExtensionAttributeName' { 'extensionAttribute9' }
+                'BitLockerExtensionAttributeEncryptedValue' { 'encrypted' }
+                'BitLockerExtensionAttributeNotEncryptedValue' { 'not-encrypted' }
+                default {
+                    @{
+                        TargetOperatingSystem = 'Windows'
+                        AuthenticationMode = 'ManagedIdentity'
+                        ManagedIdentityClientId = 'client-id'
+                        AppTenantId = ''
+                        AppClientId = ''
+                        CertificateAssetName = 'GraphAuthCertificate'
+                        ClientSecretVariableName = 'GraphClientSecret'
+                        AllowValueTakeover = $true
+                        ClearManagedValuesForOutOfScopeDevices = $true
+                    }
+                }
             }
         }
     }
@@ -121,6 +125,48 @@ Describe 'Import-RuntimeConfiguration' {
         }
 
         { Import-RuntimeConfiguration } | Should -Throw '*Chiavi mancanti*'
+    }
+
+    It 'fallisce se una Automation Variable del mapping non e disponibile' {
+        Mock Get-AutomationVariable {
+            if ($Name -eq 'BitLockerExtensionAttributeEncryptedValue') { throw 'missing' }
+            if ($Name -eq 'BitLockerExtensionAttributeName') { return 'extensionAttribute10' }
+            if ($Name -eq 'BitLockerExtensionAttributeNotEncryptedValue') { return 'notenc' }
+            @{
+                TargetOperatingSystem = 'Windows'
+                AuthenticationMode = 'ManagedIdentity'
+                ManagedIdentityClientId = 'client-id'
+                AppTenantId = ''
+                AppClientId = ''
+                CertificateAssetName = 'GraphAuthCertificate'
+                ClientSecretVariableName = 'GraphClientSecret'
+                AllowValueTakeover = $false
+                ClearManagedValuesForOutOfScopeDevices = $false
+            }
+        }
+
+        { Import-RuntimeConfiguration } | Should -Throw '*BitLockerExtensionAttributeEncryptedValue*'
+    }
+
+    It 'rifiuta una Automation Variable del mapping che non sia String' {
+        Mock Get-AutomationVariable {
+            if ($Name -eq 'BitLockerExtensionAttributeName') { return 'extensionAttribute10' }
+            if ($Name -eq 'BitLockerExtensionAttributeEncryptedValue') { return @{ invalid = $true } }
+            if ($Name -eq 'BitLockerExtensionAttributeNotEncryptedValue') { return 'notenc' }
+            @{
+                TargetOperatingSystem = 'Windows'
+                AuthenticationMode = 'ManagedIdentity'
+                ManagedIdentityClientId = 'client-id'
+                AppTenantId = ''
+                AppClientId = ''
+                CertificateAssetName = 'GraphAuthCertificate'
+                ClientSecretVariableName = 'GraphClientSecret'
+                AllowValueTakeover = $false
+                ClearManagedValuesForOutOfScopeDevices = $false
+            }
+        }
+
+        { Import-RuntimeConfiguration } | Should -Throw '*deve essere di tipo String*'
     }
 }
 

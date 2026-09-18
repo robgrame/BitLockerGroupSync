@@ -11,6 +11,7 @@ param runbookName = 'Sync-BitLockerComplianceGroups'
 
 // URL raw del runbook nel repo pubblico (branch main).
 param runbookContentUri = 'https://raw.githubusercontent.com/robgrame/Nimbus.BitLockerGroupSync/main/runbook/Sync-BitLockerComplianceGroups.ps1'
+param deployRunbookContentLinks = true
 param deployGroupSyncRunbook = true
 param deployExtensionAttributeRunbook = true
 param extensionAttributeRunbookContentUri = 'https://raw.githubusercontent.com/robgrame/Nimbus.BitLockerGroupSync/main/runbook/Sync-BitLockerExtensionAttribute.ps1'
@@ -79,5 +80,5 @@ param tags = {
   solution: 'BitLockerGroupSync'
   managedBy: 'bicep'
   environment: 'prod'
-  version: '1.2.1'
+  version: '1.3.0'
 }

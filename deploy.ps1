@@ -109,7 +109,7 @@
     configurata nel file .bicepparam.
 
 .NOTES
-    Version: 1.2.1
+    Version: 1.3.0
 
     Per visualizzare la guida completa:
         Get-Help .\deploy.ps1 -Full
@@ -396,7 +396,7 @@ function Remove-DeselectedRunbookArtifact {
         [Parameter(Mandatory)][string]$ResourceGroupName,
         [Parameter(Mandatory)][string]$AutomationAccountName,
         [Parameter(Mandatory)][string]$RunbookName,
-        [Parameter(Mandatory)][string]$RuntimeVariableName
+        [Parameter(Mandatory)][string[]]$RuntimeVariableName
     )
 
     Remove-ExistingJobScheduleLink `
@@ -447,19 +447,19 @@ function Remove-DeselectedRunbookArtifact {
             -Force
     }
 
-    $runtimeVariable = @(Get-AzAutomationVariable `
+    $automationVariables = @(Get-AzAutomationVariable `
             -ResourceGroupName $ResourceGroupName `
             -AutomationAccountName $AutomationAccountName `
-            -ErrorAction Stop |
-        Where-Object Name -eq $RuntimeVariableName |
-        Select-Object -First 1)
-    if ($runtimeVariable) {
-        Write-Warning "Rimozione configurazione runtime non selezionata '$RuntimeVariableName'."
-        Remove-AzAutomationVariable `
-            -ResourceGroupName $ResourceGroupName `
-            -AutomationAccountName $AutomationAccountName `
-            -Name $RuntimeVariableName `
-            -Confirm:$false
+            -ErrorAction Stop)
+    foreach ($variableName in $RuntimeVariableName) {
+        if ($automationVariables.Name -contains $variableName) {
+            Write-Warning "Rimozione configurazione runtime non selezionata '$variableName'."
+            Remove-AzAutomationVariable `
+                -ResourceGroupName $ResourceGroupName `
+                -AutomationAccountName $AutomationAccountName `
+                -Name $variableName `
+                -Confirm:$false
+        }
     }
 }
 
@@ -507,12 +507,221 @@ function Enable-RunbookWebhook {
 
     foreach ($item in $Webhook | Where-Object RunbookName -in $SelectedRunbookName) {
         Write-Host "==> Riabilitazione webhook '$($item.Name)' dopo il grant Graph..." -ForegroundColor Cyan
-        Set-AzAutomationWebhook `
+        try {
+            Set-AzAutomationWebhook `
+                -ResourceGroupName $ResourceGroupName `
+                -AutomationAccountName $AutomationAccountName `
+                -Name $item.Name `
+                -IsEnabled $true `
+                -ErrorAction Stop |
+                Out-Null
+            [pscustomobject]@{
+                Name        = $item.Name
+                RunbookName = $item.RunbookName
+                Restored    = $true
+                Error       = $null
+            }
+        }
+        catch {
+            [pscustomobject]@{
+                Name        = $item.Name
+                RunbookName = $item.RunbookName
+                Restored    = $false
+                Error       = $_.Exception.Message
+            }
+        }
+    }
+}
+
+function Get-DeploymentDisabledWebhook {
+    param(
+        [Parameter(Mandatory)][string]$ResourceGroupName,
+        [Parameter(Mandatory)][string]$AutomationAccountName
+    )
+
+    $state = Get-AzAutomationVariable `
+        -ResourceGroupName $ResourceGroupName `
+        -AutomationAccountName $AutomationAccountName `
+        -Name 'BitLockerDeploymentDisabledWebhooks' `
+        -ErrorAction SilentlyContinue
+    if (-not $state) { return @() }
+    if ($state.Encrypted -or $state.Value -isnot [string]) {
+        throw "Automation Variable 'BitLockerDeploymentDisabledWebhooks' non valida."
+    }
+    try {
+        return @($state.Value | ConvertFrom-Json -ErrorAction Stop)
+    }
+    catch {
+        throw "Automation Variable 'BitLockerDeploymentDisabledWebhooks' contiene JSON non valido."
+    }
+}
+
+function Save-DeploymentDisabledWebhook {
+    param(
+        [Parameter(Mandatory)][string]$ResourceGroupName,
+        [Parameter(Mandatory)][string]$AutomationAccountName,
+        [Parameter(Mandatory)][object[]]$Webhook
+    )
+
+    $uniqueWebhook = @(
+        $Webhook |
+        Group-Object Name, RunbookName |
+        ForEach-Object { $_.Group[0] }
+    )
+    $value = ConvertTo-Json -InputObject $uniqueWebhook -Compress
+    $existing = Get-AzAutomationVariable `
+        -ResourceGroupName $ResourceGroupName `
+        -AutomationAccountName $AutomationAccountName `
+        -Name 'BitLockerDeploymentDisabledWebhooks' `
+        -ErrorAction SilentlyContinue
+    $parameters = @{
+        ResourceGroupName     = $ResourceGroupName
+        AutomationAccountName = $AutomationAccountName
+        Name                  = 'BitLockerDeploymentDisabledWebhooks'
+        Encrypted             = $false
+        Value                 = $value
+    }
+    if ($existing) {
+        Set-AzAutomationVariable @parameters -ErrorAction Stop | Out-Null
+    }
+    else {
+        New-AzAutomationVariable @parameters `
+            -Description 'Stato interno dei webhook temporaneamente disabilitati dal deployment.' `
+            -ErrorAction Stop |
+            Out-Null
+    }
+}
+
+function Clear-DeploymentDisabledWebhook {
+    param(
+        [Parameter(Mandatory)][string]$ResourceGroupName,
+        [Parameter(Mandatory)][string]$AutomationAccountName
+    )
+
+    Remove-AzAutomationVariable `
+        -ResourceGroupName $ResourceGroupName `
+        -AutomationAccountName $AutomationAccountName `
+        -Name 'BitLockerDeploymentDisabledWebhooks' `
+        -Confirm:$false `
+        -ErrorAction Stop
+}
+
+function Import-LocalAutomationRunbook {
+    param(
+        [Parameter(Mandatory)][string]$ResourceGroupName,
+        [Parameter(Mandatory)][string]$AutomationAccountName,
+        [Parameter(Mandatory)][string]$Path,
+        [Parameter(Mandatory)][string]$Name,
+        [Parameter(Mandatory)][hashtable]$Tags
+    )
+
+    if ($Name -notmatch '^[A-Za-z][A-Za-z0-9_-]{0,62}$') {
+        throw "Nome runbook non valido per l'import locale: '$Name'."
+    }
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+        throw "File runbook locale non trovato: $Path"
+    }
+
+    $importPath = $Path
+    $temporaryDirectory = $null
+    try {
+        if ([IO.Path]::GetFileNameWithoutExtension($Path) -ne $Name) {
+            $temporaryDirectory = Join-Path ([IO.Path]::GetTempPath()) "nimbus-runbook-$([guid]::NewGuid().ToString('N'))"
+            New-Item -ItemType Directory -Path $temporaryDirectory -ErrorAction Stop | Out-Null
+            $importPath = Join-Path $temporaryDirectory "$Name.ps1"
+            Copy-Item -LiteralPath $Path -Destination $importPath -ErrorAction Stop
+        }
+
+        Write-Host "==> Import locale runbook '$Name'..." -ForegroundColor Cyan
+        Import-AzAutomationRunbook `
             -ResourceGroupName $ResourceGroupName `
             -AutomationAccountName $AutomationAccountName `
-            -Name $item.Name `
-            -IsEnabled $true |
+            -Path $importPath `
+            -Name $Name `
+            -Type PowerShell72 `
+            -Tags $Tags `
+            -LogProgress $true `
+            -LogVerbose $true `
+            -Published `
+            -Force `
+            -ErrorAction Stop |
             Out-Null
+    }
+    finally {
+        if ($temporaryDirectory) {
+            Remove-Item -LiteralPath $temporaryDirectory -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+
+    $publishedRunbook = Get-AzAutomationRunbook `
+        -ResourceGroupName $ResourceGroupName `
+        -AutomationAccountName $AutomationAccountName `
+        -Name $Name `
+        -ErrorAction Stop
+    if ($publishedRunbook.State -ne 'Published') {
+        throw "Il runbook '$Name' non risulta Published dopo l'import locale."
+    }
+}
+
+function Initialize-ExtensionAttributeAutomationVariable {
+    param(
+        [Parameter(Mandatory)][string]$ResourceGroupName,
+        [Parameter(Mandatory)][string]$AutomationAccountName,
+        [Parameter(Mandatory)][string]$Name,
+        [Parameter(Mandatory)][string]$Value
+    )
+
+    $existing = @(Get-AzAutomationVariable `
+            -ResourceGroupName $ResourceGroupName `
+            -AutomationAccountName $AutomationAccountName `
+            -ErrorAction Stop |
+        Where-Object Name -eq $Name |
+        Select-Object -First 1)
+    if ($existing) {
+        if ($existing.Encrypted) {
+            throw "Automation Variable '$Name' deve essere una String non cifrata."
+        }
+        if ($existing.Value -isnot [string]) {
+            throw "Automation Variable '$Name' deve contenere un valore di tipo String."
+        }
+        if ([string]$existing.Value -ne $Value) {
+            Write-Warning "Automation Variable '$Name' preservata con valore diverso dal parametro iniziale richiesto."
+        }
+        Write-Host "    [=] Automation Variable preservata: $Name" -ForegroundColor DarkGray
+        return [string]$existing.Value
+    }
+
+    Write-Host "    [+] Creazione Automation Variable: $Name = '$Value'" -ForegroundColor Green
+    New-AzAutomationVariable `
+        -ResourceGroupName $ResourceGroupName `
+        -AutomationAccountName $AutomationAccountName `
+        -Name $Name `
+        -Encrypted $false `
+        -Value $Value `
+        -Description 'Configurazione globale di Sync-BitLockerExtensionAttribute; modificabile dall Automation Account.' |
+        Out-Null
+    return $Value
+}
+
+function Test-ExtensionAttributeMapping {
+    param(
+        [Parameter(Mandatory)][string]$AttributeName,
+        [Parameter(Mandatory)][string]$EncryptedValue,
+        [Parameter(Mandatory)][string]$NotEncryptedValue
+    )
+
+    if ($AttributeName -notmatch '^extensionAttribute(?:[1-9]|1[0-5])$') {
+        throw "Nome extension attribute non valido: '$AttributeName'."
+    }
+    if ([string]::IsNullOrWhiteSpace($EncryptedValue) -or
+        [string]::IsNullOrWhiteSpace($NotEncryptedValue)) {
+        throw 'I valori extension attribute cifrato e non cifrato non possono essere vuoti.'
+    }
+    if ($EncryptedValue -eq $NotEncryptedValue) {
+        throw 'I valori extension attribute cifrato e non cifrato devono essere diversi.'
+    }
+    if ($EncryptedValue.Length -gt 1024 -or $NotEncryptedValue.Length -gt 1024) {
+        throw 'I valori extension attribute non possono superare 1024 caratteri.'
     }
 }
 
@@ -688,6 +897,46 @@ $selection = Resolve-RunbookDeploymentSelection `
 $deployGroupSyncRunbook = $selection.DeployGroupSync
 $deployExtensionAttributeRunbook = $selection.DeployExtensionAttribute
 $configuredExtensionAttributeRunbookName = 'Sync-BitLockerExtensionAttribute'
+$configuredExtensionAttributeName = if ($null -ne $parameterValues.extensionAttributeName) {
+    [string]$parameterValues.extensionAttributeName.value
+}
+else {
+    'extensionAttribute10'
+}
+$configuredExtensionAttributeEncryptedValue =
+    if ($null -ne $parameterValues.extensionAttributeEncryptedValue) {
+        [string]$parameterValues.extensionAttributeEncryptedValue.value
+    }
+    else {
+        'enc'
+    }
+$configuredExtensionAttributeNotEncryptedValue =
+    if ($null -ne $parameterValues.extensionAttributeNotEncryptedValue) {
+        [string]$parameterValues.extensionAttributeNotEncryptedValue.value
+    }
+    else {
+        'notenc'
+    }
+Test-ExtensionAttributeMapping `
+    -AttributeName $configuredExtensionAttributeName `
+    -EncryptedValue $configuredExtensionAttributeEncryptedValue `
+    -NotEncryptedValue $configuredExtensionAttributeNotEncryptedValue
+$deployRunbookContentLinks = if ($null -ne $parameterValues.deployRunbookContentLinks) {
+    [bool]$parameterValues.deployRunbookContentLinks.value
+}
+else {
+    $true
+}
+$configuredTags = if ($null -ne $parameterValues.tags) {
+    ConvertTo-StringHashtable -InputObject $parameterValues.tags.value
+}
+else {
+    @{
+        solution  = 'BitLockerGroupSync'
+        managedBy = 'deploy.ps1'
+        version   = '1.3.0'
+    }
+}
 $configuredScheduleIntervalHours = if ($null -ne $parameterValues.scheduleIntervalHours) {
     [int]$parameterValues.scheduleIntervalHours.value
 }
@@ -806,8 +1055,52 @@ if ($AuthenticationMode -eq 'AppRegistrationSecret' -and -not $AppClientSecret) 
     }
 }
 
+$existingAutomationAccount = Get-AzAutomationAccount `
+    -ResourceGroupName $ResourceGroupName `
+    -Name $configuredAutomationAccountName `
+    -ErrorAction SilentlyContinue
+$extensionMappingRequiresInitialization = $false
+if ($deployExtensionAttributeRunbook) {
+    $existingMappingVariables = if ($existingAutomationAccount) {
+        @(
+            Get-AzAutomationVariable `
+            -ResourceGroupName $ResourceGroupName `
+            -AutomationAccountName $configuredAutomationAccountName `
+            -ErrorAction Stop
+        )
+    }
+    else {
+        @()
+    }
+    $existingMapping = @{}
+    foreach ($variable in $existingMappingVariables | Where-Object {
+            $_.Name -in @(
+                'BitLockerExtensionAttributeName'
+                'BitLockerExtensionAttributeEncryptedValue'
+                'BitLockerExtensionAttributeNotEncryptedValue'
+            )
+        }) {
+        if ($variable.Encrypted) {
+            throw "Automation Variable '$($variable.Name)' deve essere una String non cifrata."
+        }
+        if ($variable.Value -isnot [string]) {
+            throw "Automation Variable '$($variable.Name)' deve contenere un valore di tipo String."
+        }
+        $existingMapping[$variable.Name] = [string]$variable.Value
+    }
+    $extensionMappingRequiresInitialization = $existingMapping.Count -lt 3
+    if (-not $extensionMappingRequiresInitialization) {
+        Test-ExtensionAttributeMapping `
+            -AttributeName $existingMapping.BitLockerExtensionAttributeName `
+            -EncryptedValue $existingMapping.BitLockerExtensionAttributeEncryptedValue `
+            -NotEncryptedValue $existingMapping.BitLockerExtensionAttributeNotEncryptedValue
+    }
+}
+
 $deploymentName = "nimbus-bitlocker-$(Get-Date -Format 'yyyyMMddHHmmssfff')"
 $runtimeEnabled = $GrantGraphPermissions -or $PermissionsConfirmed
+$requiresStagedActivation =
+    $GrantGraphPermissions -or -not $deployRunbookContentLinks -or $extensionMappingRequiresInitialization
 $templateParams = @{
     ResourceGroupName     = $ResourceGroupName
     TemplateParameterFile = $resolvedParameterFile
@@ -835,8 +1128,15 @@ if (-not $SkipWhatIf) {
 
 # Azure Automation jobSchedule e immutabile: ricreare il link garantisce che
 # ogni redeploy applichi il client ID UAMI e tutti i parametri runtime correnti.
-$disabledWebhooks = @()
-if (-not $PermissionsConfirmed) {
+$disabledWebhooks = if ($existingAutomationAccount) {
+    @(Get-DeploymentDisabledWebhook `
+            -ResourceGroupName $ResourceGroupName `
+            -AutomationAccountName $configuredAutomationAccountName)
+}
+else {
+    @()
+}
+if ($requiresStagedActivation -or -not $PermissionsConfirmed) {
     $disabledWebhooks += @(Disable-RunbookWebhook `
             -ResourceGroupName $ResourceGroupName `
             -AutomationAccountName $configuredAutomationAccountName `
@@ -845,16 +1145,28 @@ if (-not $PermissionsConfirmed) {
             -ResourceGroupName $ResourceGroupName `
             -AutomationAccountName $configuredAutomationAccountName `
             -RunbookName $configuredExtensionAttributeRunbookName)
+    if ($disabledWebhooks.Count -gt 0) {
+        Save-DeploymentDisabledWebhook `
+            -ResourceGroupName $ResourceGroupName `
+            -AutomationAccountName $configuredAutomationAccountName `
+            -Webhook $disabledWebhooks
+    }
 }
-if ($GrantGraphPermissions) {
-    Remove-ExistingJobScheduleLink `
-        -ResourceGroupName $ResourceGroupName `
-        -AutomationAccountName $configuredAutomationAccountName `
-        -RunbookName $configuredRunbookName
-    Remove-ExistingJobScheduleLink `
-        -ResourceGroupName $ResourceGroupName `
-        -AutomationAccountName $configuredAutomationAccountName `
-        -RunbookName $configuredExtensionAttributeRunbookName
+if ($requiresStagedActivation) {
+    if ($deployGroupSyncRunbook) {
+        Remove-ExistingJobScheduleLink `
+            -ResourceGroupName $ResourceGroupName `
+            -AutomationAccountName $configuredAutomationAccountName `
+            -RunbookName $configuredRunbookName `
+            -ScheduleName $configuredScheduleName
+    }
+    if ($deployExtensionAttributeRunbook) {
+        Remove-ExistingJobScheduleLink `
+            -ResourceGroupName $ResourceGroupName `
+            -AutomationAccountName $configuredAutomationAccountName `
+            -RunbookName $configuredExtensionAttributeRunbookName `
+            -ScheduleName $configuredExtensionAttributeScheduleName
+    }
 }
 else {
     if ($deployGroupSyncRunbook) {
@@ -875,7 +1187,7 @@ else {
 
 Write-Host '==> Deploy Bicep...' -ForegroundColor Cyan
 $deploymentParams = $templateParams.Clone()
-if ($GrantGraphPermissions) {
+if ($requiresStagedActivation) {
     $deploymentParams.enableSchedule = $false
     $deploymentParams.enableDeadmanAlert = $false
 }
@@ -891,6 +1203,10 @@ $directRunbookParameters = ConvertTo-DirectRunbookHashtable -Parameters $runbook
 $extensionAttributeRunbookName = [string]$deployment.Outputs.extensionAttributeRunbookName.Value
 $extensionAttributeRunbookParameters = ConvertTo-StringHashtable `
     -InputObject $deployment.Outputs.extensionAttributeRunbookParameters.Value
+$extensionAttributeInitialValues = $deployment.Outputs.extensionAttributeInitialValues.Value
+$configuredExtensionAttributeName = [string]$extensionAttributeInitialValues.name
+$configuredExtensionAttributeEncryptedValue = [string]$extensionAttributeInitialValues.encrypted
+$configuredExtensionAttributeNotEncryptedValue = [string]$extensionAttributeInitialValues.notEncrypted
 $directExtensionAttributeRunbookParameters = ConvertTo-DirectExtensionAttributeRunbookHashtable `
     -Parameters $extensionAttributeRunbookParameters
 if ($AuthenticationMode -eq 'ManagedIdentity') {
@@ -899,6 +1215,48 @@ if ($AuthenticationMode -eq 'ManagedIdentity') {
     Write-Host "    UAMI principalId: $principalId" -ForegroundColor Green
 }
 $graphPermissionPrincipalId = $principalId
+
+if ($deployExtensionAttributeRunbook) {
+    Write-Host '==> Inizializzazione Automation Variables globali extension attribute...' -ForegroundColor Cyan
+    $effectiveExtensionAttributeName = Initialize-ExtensionAttributeAutomationVariable `
+        -ResourceGroupName $ResourceGroupName `
+        -AutomationAccountName $aaName `
+        -Name 'BitLockerExtensionAttributeName' `
+        -Value $configuredExtensionAttributeName
+    $effectiveExtensionAttributeEncryptedValue = Initialize-ExtensionAttributeAutomationVariable `
+        -ResourceGroupName $ResourceGroupName `
+        -AutomationAccountName $aaName `
+        -Name 'BitLockerExtensionAttributeEncryptedValue' `
+        -Value $configuredExtensionAttributeEncryptedValue
+    $effectiveExtensionAttributeNotEncryptedValue = Initialize-ExtensionAttributeAutomationVariable `
+        -ResourceGroupName $ResourceGroupName `
+        -AutomationAccountName $aaName `
+        -Name 'BitLockerExtensionAttributeNotEncryptedValue' `
+        -Value $configuredExtensionAttributeNotEncryptedValue
+    Test-ExtensionAttributeMapping `
+        -AttributeName $effectiveExtensionAttributeName `
+        -EncryptedValue $effectiveExtensionAttributeEncryptedValue `
+        -NotEncryptedValue $effectiveExtensionAttributeNotEncryptedValue
+}
+
+if (-not $deployRunbookContentLinks) {
+    if ($deployGroupSyncRunbook) {
+        Import-LocalAutomationRunbook `
+            -ResourceGroupName $ResourceGroupName `
+            -AutomationAccountName $aaName `
+            -Path "$PSScriptRoot\runbook\Sync-BitLockerComplianceGroups.ps1" `
+            -Name $configuredRunbookName `
+            -Tags $configuredTags
+    }
+    if ($deployExtensionAttributeRunbook) {
+        Import-LocalAutomationRunbook `
+            -ResourceGroupName $ResourceGroupName `
+            -AutomationAccountName $aaName `
+            -Path "$PSScriptRoot\runbook\Sync-BitLockerExtensionAttribute.ps1" `
+            -Name $configuredExtensionAttributeRunbookName `
+            -Tags $configuredTags
+    }
+}
 
 if ($AuthenticationMode -eq 'AppRegistrationCertificate' -and -not [string]::IsNullOrWhiteSpace($AppCertificatePfxPath)) {
     Write-Host "==> Import Automation Certificate '$AppCertificateAssetName'..." -ForegroundColor Cyan
@@ -941,24 +1299,6 @@ if ($GrantGraphPermissions) {
         throw "Riconciliazione dei permessi Graph fallita (exit code $LASTEXITCODE)."
     }
 
-    Write-Host '==> Attivazione schedule e dead-man alert dopo il grant Graph...' -ForegroundColor Cyan
-    $activationDeploymentName = "nimbus-bitlocker-activate-$(Get-Date -Format 'yyyyMMddHHmmssfff')"
-    $deployment = New-AzResourceGroupDeployment `
-        @templateParams `
-        -Name $activationDeploymentName `
-        -Verbose
-    if ($disabledWebhooks.Count -gt 0) {
-        $selectedRunbookNames = @()
-        if ($deployGroupSyncRunbook) { $selectedRunbookNames += $configuredRunbookName }
-        if ($deployExtensionAttributeRunbook) {
-            $selectedRunbookNames += $configuredExtensionAttributeRunbookName
-        }
-        Enable-RunbookWebhook `
-            -ResourceGroupName $ResourceGroupName `
-            -AutomationAccountName $aaName `
-            -Webhook $disabledWebhooks `
-            -SelectedRunbookName $selectedRunbookNames
-    }
 }
 elseif (-not $PermissionsConfirmed) {
     Write-Warning 'Permission Graph non confermate: schedule, dead-man alert, webhook e avvio runbook restano disabilitati.'
@@ -968,6 +1308,56 @@ else {
     if ($AuthenticationMode -eq 'ManagedIdentity' -and
         -not ($deployGroupSyncRunbook -and $deployExtensionAttributeRunbook)) {
         Write-Warning 'RunbookSelection e stata ridotta senza -GrantGraphPermissions: verificare e revocare manualmente gli app role Graph non piu necessari.'
+    }
+}
+
+if ($requiresStagedActivation -and $runtimeEnabled) {
+    Write-Host '==> Attivazione schedule e dead-man alert dopo la preparazione runtime...' -ForegroundColor Cyan
+    $activationDeploymentName = "nimbus-bitlocker-activate-$(Get-Date -Format 'yyyyMMddHHmmssfff')"
+    $deployment = New-AzResourceGroupDeployment `
+        @templateParams `
+        -Name $activationDeploymentName `
+        -Verbose
+}
+
+if ($runtimeEnabled -and $disabledWebhooks.Count -gt 0) {
+    $selectedRunbookNames = @()
+    if ($deployGroupSyncRunbook) { $selectedRunbookNames += $configuredRunbookName }
+    if ($deployExtensionAttributeRunbook) {
+        $selectedRunbookNames += $configuredExtensionAttributeRunbookName
+    }
+    $restoredWebhooks = @(
+        Enable-RunbookWebhook `
+        -ResourceGroupName $ResourceGroupName `
+        -AutomationAccountName $aaName `
+        -Webhook $disabledWebhooks `
+        -SelectedRunbookName $selectedRunbookNames
+    )
+    $restoredKeys = @(
+        $restoredWebhooks |
+        Where-Object Restored |
+        ForEach-Object { "$($_.RunbookName)|$($_.Name)" }
+    )
+    $remainingDisabledWebhooks = @(
+        $disabledWebhooks |
+        Where-Object { "$($_.RunbookName)|$($_.Name)" -notin $restoredKeys }
+    )
+    if ($remainingDisabledWebhooks.Count -gt 0) {
+        Save-DeploymentDisabledWebhook `
+            -ResourceGroupName $ResourceGroupName `
+            -AutomationAccountName $aaName `
+            -Webhook $remainingDisabledWebhooks
+    }
+    else {
+        Clear-DeploymentDisabledWebhook `
+            -ResourceGroupName $ResourceGroupName `
+            -AutomationAccountName $aaName
+    }
+    $restoreFailures = @($restoredWebhooks | Where-Object { -not $_.Restored })
+    if ($restoreFailures.Count -gt 0) {
+        $failureDetails = $restoreFailures |
+            ForEach-Object { "$($_.RunbookName)/$($_.Name): $($_.Error)" }
+        throw "Ripristino webhook incompleto; stato preservato per il retry: $($failureDetails -join '; ')"
     }
 }
 

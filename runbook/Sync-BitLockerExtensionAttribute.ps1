@@ -13,7 +13,7 @@
     vengono ignorati e contabilizzati nel riepilogo.
 
 .NOTES
-    Version: 1.2.1
+    Version: 1.3.0
 
     Permessi Graph application richiesti:
       - DeviceManagementManagedDevices.Read.All
@@ -71,9 +71,6 @@ function Import-RuntimeConfiguration {
     }
 
     $parameterNames = @(
-        'ExtensionAttributeName',
-        'EncryptedValue',
-        'NotEncryptedValue',
         'TargetOperatingSystem',
         'AuthenticationMode',
         'ManagedIdentityClientId',
@@ -120,7 +117,29 @@ function Import-RuntimeConfiguration {
     if ($missing.Count -gt 0) {
         throw "Automation Variable '$variableName' incompleta. Chiavi mancanti: $($missing -join ', ')."
     }
-    Write-Log "Caricati $imported parametri runtime dalla Automation Variable '$variableName'."
+
+    $attributeVariables = [ordered]@{
+        ExtensionAttributeName = 'BitLockerExtensionAttributeName'
+        EncryptedValue         = 'BitLockerExtensionAttributeEncryptedValue'
+        NotEncryptedValue      = 'BitLockerExtensionAttributeNotEncryptedValue'
+    }
+    foreach ($entry in $attributeVariables.GetEnumerator()) {
+        try {
+            $value = Get-AutomationVariable -Name $entry.Value -ErrorAction Stop
+        }
+        catch {
+            throw "Automation Variable obbligatoria '$($entry.Value)' non disponibile: $($_.Exception.Message)"
+        }
+        if ($value -isnot [string]) {
+            throw "Automation Variable obbligatoria '$($entry.Value)' deve essere di tipo String."
+        }
+        if ([string]::IsNullOrWhiteSpace($value)) {
+            throw "Automation Variable obbligatoria '$($entry.Value)' vuota."
+        }
+        Set-Variable -Name $entry.Key -Value $value -Scope Script
+        $imported++
+    }
+    Write-Log "Caricati $imported parametri dalle Automation Variables del runbook."
 }
 
 function Connect-GraphSession {
@@ -387,6 +406,9 @@ try {
     }
     if ($EncryptedValue -eq $NotEncryptedValue) {
         throw 'EncryptedValue e NotEncryptedValue devono essere diversi.'
+    }
+    if ($EncryptedValue.Length -gt 1024 -or $NotEncryptedValue.Length -gt 1024) {
+        throw 'EncryptedValue e NotEncryptedValue non possono superare 1024 caratteri.'
     }
     if ($WhatIfOnly) {
         Write-Log 'Modalita WhatIf attiva: nessun device verra aggiornato.' 'WARN'

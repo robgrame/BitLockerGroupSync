@@ -57,6 +57,9 @@ Describe 'Sintassi PowerShell' {
             $script:extensionText | Should -Match 'AllowValueTakeover'
             $script:extensionText | Should -Match 'Automation Variable obbligatoria'
             $script:extensionText | Should -Match 'Chiavi mancanti'
+            $script:extensionText | Should -Match 'BitLockerExtensionAttributeName'
+            $script:extensionText | Should -Match 'BitLockerExtensionAttributeEncryptedValue'
+            $script:extensionText | Should -Match 'BitLockerExtensionAttributeNotEncryptedValue'
             $script:extensionText | Should -Not -Match '\[string\]\$ExtensionAttributeName'
         }
 
@@ -96,6 +99,11 @@ Describe 'Sintassi PowerShell' {
             $script:extensionText | Should -Match '\$currentValue -notin @\(\$EncryptedValue, \$NotEncryptedValue\)'
             $script:extensionText | Should -Match '-not \$AllowValueTakeover'
             $script:extensionText | Should -Match 'Nessuna modifica applicata'
+        }
+
+        It 'Limita a 1024 caratteri i valori dell extension attribute' {
+            $script:extensionText | Should -Match '\$EncryptedValue\.Length -gt 1024'
+            $script:extensionText | Should -Match '\$NotEncryptedValue\.Length -gt 1024'
         }
     }
     It 'deploy.ps1 non ha errori di parsing' {
@@ -322,6 +330,46 @@ Describe 'Orchestrazione del deployment' {
         $script:deployText | Should -Match 'New-AzAutomationWebhook[\s\S]*-Parameters \$directRunbookParameters'
         $script:deployText | Should -Match 'Start-AzAutomationRunbook[\s\S]*-Parameters \$directRunbookParameters'
     }
+    It 'Importa e pubblica localmente i runbook per repository privati' {
+        $script:deployText | Should -Match '\$deployRunbookContentLinks'
+        $script:deployText | Should -Match 'function Import-LocalAutomationRunbook'
+        $script:deployText | Should -Match 'Import-AzAutomationRunbook'
+        $script:deployText | Should -Match '-Type PowerShell72'
+        $script:deployText | Should -Match '-Published'
+        $script:deployText | Should -Match '-Tags \$configuredTags'
+        $script:deployText | Should -Match 'Copy-Item -LiteralPath \$Path -Destination \$importPath'
+        $script:deployText | Should -Match 'Remove-Item -LiteralPath \$temporaryDirectory'
+        $script:deployText | Should -Match "Nome runbook non valido per l'import locale"
+        $script:deployText | Should -Match "\.State -ne 'Published'"
+        $script:deployText | Should -Match 'Sync-BitLockerComplianceGroups\.ps1'
+        $script:deployText | Should -Match 'Sync-BitLockerExtensionAttribute\.ps1'
+        $script:deployText | Should -Match '\$requiresStagedActivation\s*=\s*\$GrantGraphPermissions -or\s*-not \$deployRunbookContentLinks -or\s*\$extensionMappingRequiresInitialization'
+        $script:deployText | Should -Match 'if \(\$requiresStagedActivation -and \$runtimeEnabled\)'
+    }
+    It 'Inizializza una sola volta le Automation Variables globali del mapping' {
+        $script:deployText | Should -Match 'function Initialize-ExtensionAttributeAutomationVariable'
+        $script:deployText | Should -Match 'Automation Variable preservata'
+        $script:deployText | Should -Match 'New-AzAutomationVariable'
+        $script:deployText | Should -Match 'return \[string\]\$existing\.Value'
+        $script:deployText | Should -Match 'Test-ExtensionAttributeMapping'
+        $script:deployText | Should -Match '\$extensionMappingRequiresInitialization = \$existingMapping\.Count -lt 3'
+        $script:deployText | Should -Match "deve essere una String non cifrata"
+        $script:deployText | Should -Match "deve contenere un valore di tipo String"
+        $script:deployText | Should -Match "Name 'BitLockerExtensionAttributeName'"
+        $script:deployText | Should -Match "Name 'BitLockerExtensionAttributeEncryptedValue'"
+        $script:deployText | Should -Match "Name 'BitLockerExtensionAttributeNotEncryptedValue'"
+        $script:deployText | Should -Match '\$GrantGraphPermissions -or -not \$deployRunbookContentLinks -or \$extensionMappingRequiresInitialization'
+        $script:deployText | Should -Not -Match "'BitLockerExtensionAttributeRuntimeConfig'\s*'BitLockerExtensionAttributeName'"
+        $script:deployText | Should -Match 'if \(\$requiresStagedActivation\)[\s\S]*-ScheduleName \$configuredScheduleName[\s\S]*-ScheduleName \$configuredExtensionAttributeScheduleName'
+    }
+    It 'Persiste e ripristina i webhook disabilitati da un deployment fallito' {
+        $script:deployText | Should -Match 'function Get-DeploymentDisabledWebhook'
+        $script:deployText | Should -Match 'function Save-DeploymentDisabledWebhook'
+        $script:deployText | Should -Match 'function Clear-DeploymentDisabledWebhook'
+        $script:deployText | Should -Match "Name 'BitLockerDeploymentDisabledWebhooks'"
+        $script:deployText | Should -Match 'Save-DeploymentDisabledWebhook[\s\S]*if \(\$runtimeEnabled -and \$disabledWebhooks\.Count -gt 0\)'
+        $script:deployText | Should -Match 'Enable-RunbookWebhook[\s\S]*Clear-DeploymentDisabledWebhook'
+    }
     It 'Installa Azure CLI, Bicep e i moduli PowerShell richiesti' {
         $script:deployText | Should -Match 'winget install --id Microsoft\.AzureCLI'
         $script:deployText | Should -Match 'https://aka\.ms/installazurecliwindowsx64'
@@ -453,7 +501,7 @@ Describe 'Orchestrazione del deployment' {
     It 'Mantiene i job disabilitati fino al completamento del grant Graph' {
         $script:deployText | Should -Match '\$deploymentParams\.enableSchedule = \$false'
         $script:deployText | Should -Match '\$deploymentParams\.enableDeadmanAlert = \$false'
-        $script:deployText | Should -Match 'Attivazione schedule e dead-man alert dopo il grant Graph'
+        $script:deployText | Should -Match 'Attivazione schedule e dead-man alert dopo la preparazione runtime'
         $script:deployText | Should -Match 'Disable-RunbookWebhook'
         $script:deployText | Should -Match 'Enable-RunbookWebhook'
         $script:deployText | Should -Match 'if \(-not \$PermissionsConfirmed\)'

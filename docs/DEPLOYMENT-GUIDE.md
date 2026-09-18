@@ -170,7 +170,7 @@ group, usare `-SkipProviderRegistration`.
 
 ### Runbook extensionAttribute10
 
-La versione 1.2.1 può distribuire nello stesso Automation Account il runbook
+La versione 1.3.0 può distribuire nello stesso Automation Account il runbook
 `Sync-BitLockerExtensionAttribute`, che imposta sui device Entra:
 
 - `extensionAttribute10 = "enc"` quando Intune riporta `isEncrypted=true`;
@@ -187,6 +187,19 @@ param extensionAttributeNotEncryptedValue = 'notenc'
 param extensionAttributeAllowValueTakeover = false
 param clearManagedValuesForOutOfScopeDevices = false
 ```
+
+Il deployment inizializza, solo se assenti, tre Automation Variables globali:
+
+- `BitLockerExtensionAttributeName = extensionAttribute10`
+- `BitLockerExtensionAttributeEncryptedValue = enc`
+- `BitLockerExtensionAttributeNotEncryptedValue = notenc`
+
+Il runbook le rilegge a ogni esecuzione. Possono quindi essere aggiornate
+direttamente dall'Automation Account; se una variabile è assente, vuota o non
+valida, il job termina prima di modificare i device. I redeploy preservano i
+valori modificati operativamente. I parametri Bicep mostrati sopra sono valori
+di inizializzazione: dopo la prima creazione non sovrascrivono le Automation
+Variables già presenti.
 
 Prima dell'attivazione verificare che `extensionAttribute10` non sia gestito da altre
 soluzioni. Con takeover disabilitato, la presenza di valori diversi da `enc`/`notenc`
@@ -218,6 +231,11 @@ Se `-RunbookSelection` viene omesso, prevalgono i flag del file `.bicepparam`.
 Una selezione esplicita è anche dichiarativa: gli artefatti Automation del
 runbook escluso e il relativo dead-man alert secondario vengono rimossi dopo un
 deployment riuscito.
+
+Se la repository è privata, impostare `deployRunbookContentLinks=false`.
+L'orchestratore importerà e pubblicherà i runbook dai file locali dopo il primo
+passaggio Bicep e prima del grant Graph; le schedule vengono create solo nel
+passaggio di attivazione successivo.
 
 Clonare la repository e creare un file locale non versionato:
 

@@ -4,7 +4,7 @@
 
 ### Dynamic Entra ID security groups driven by Intune BitLocker encryption state & recovery-key escrow
 
-**Versione soluzione: 1.2.1**
+**Versione soluzione: 1.3.0**
 
 [![PowerShell](https://img.shields.io/badge/PowerShell-7.2-5391FE?style=for-the-badge&logo=powershell&logoColor=white)](https://learn.microsoft.com/powershell/)
 [![Bicep](https://img.shields.io/badge/Bicep-IaC-00BCF2?style=for-the-badge&logo=microsoftazure&logoColor=white)](https://learn.microsoft.com/azure/azure-resource-manager/bicep/)
@@ -57,6 +57,22 @@ Il secondo runbook usa lo stesso Automation Account e la stessa identità, ma di
 schedule e configurazione runtime autonome. Aggiorna solo i valori non conformi e ignora
 device stale, non risolti o con stato `isEncrypted` nullo. La schedule parte 30 minuti
 dopo quella del runbook gruppi per evitare picchi simultanei su Graph.
+
+Il mapping viene letto a ogni job da tre Automation Variables globali, modificabili
+direttamente dall'Automation Account senza ripubblicare il runbook:
+
+| Automation Variable | Valore iniziale |
+|---|---|
+| `BitLockerExtensionAttributeName` | `extensionAttribute10` |
+| `BitLockerExtensionAttributeEncryptedValue` | `enc` |
+| `BitLockerExtensionAttributeNotEncryptedValue` | `notenc` |
+
+I valori Bicep corrispondenti inizializzano queste variabili solo se assenti.
+Dopo la prima creazione, modificarli nel file parametri non sovrascrive i valori
+operativi: gli aggiornamenti successivi vanno effettuati nell'Automation Account.
+
+`deploy.ps1` crea questi valori solo se assenti. I deploy successivi preservano
+le modifiche effettuate dal portale o via API.
 
 Per sicurezza la funzionalità è disabilitata nel template Bicep e deve essere attivata
 esplicitamente. Se `extensionAttribute10` contiene valori diversi da `enc`/`notenc`, il
@@ -192,6 +208,10 @@ In questa modalità il deployment crea o aggiorna prima l'infrastruttura con i
 job schedulati disabilitati, completa il grant amministrativo e solo dopo abilita
 schedule e dead-man alert. Un grant interrotto non lascia job attivi.
 
+Per repository privati impostare `deployRunbookContentLinks=false` nel file
+`.bicepparam`: `deploy.ps1` importa e pubblica i due script direttamente dai file
+locali, evitando content link GitHub non autenticabili da Azure Automation.
+
 Se `-RunbookSelection` viene omesso, sono rispettati i flag nel file
 `.bicepparam`. Quando la selezione esclude un runbook già distribuito, il deploy
 ne rimuove collegamenti schedulati, schedule, runbook e variabile runtime; rimuove
@@ -263,6 +283,10 @@ pwsh ./scripts/Grant-GraphPermissions.ps1 -ManagedIdentityPrincipalId <principal
 Il deployment salva la configurazione non sensibile anche nella Automation Variable
 `BitLockerSyncRuntimeConfig`. Gli avvii manuali dal portale la caricano automaticamente;
 i parametri forniti esplicitamente da schedule, webhook o PowerShell hanno precedenza.
+
+Il runbook extension attribute mantiene autenticazione e opzioni di sicurezza in
+`BitLockerExtensionAttributeRuntimeConfig`, mentre nome attributo e valori `enc` /
+`notenc` risiedono nelle tre Automation Variables globali elencate nell'overview.
 
 | Parametro | Default | Descrizione |
 |---|---|---|

@@ -21,6 +21,9 @@ param runbookName string = 'Sync-BitLockerComplianceGroups'
 @description('URL raw (pubblico) del file .ps1 del runbook. Es. raw.githubusercontent.com/.../Sync-BitLockerComplianceGroups.ps1')
 param runbookContentUri string
 
+@description('Se true Azure Automation pubblica i runbook dai content link. Impostare false per repository privati e usare deploy.ps1 per importarli dai file locali.')
+param deployRunbookContentLinks bool = true
+
 @description('Se true distribuisce il runbook di sincronizzazione dei gruppi Entra.')
 param deployGroupSyncRunbook bool = true
 
@@ -207,7 +210,7 @@ param notificationDetailLimit int = 50
 param tags object = {
   solution: 'BitLockerGroupSync'
   managedBy: 'bicep'
-  version: '1.2.1'
+  version: '1.3.0'
 }
 
 var graphAuthModuleUri = 'https://www.powershellgallery.com/api/v2/package/Microsoft.Graph.Authentication'
@@ -245,9 +248,6 @@ var extensionAttributeRuntimeConfig = {
   AppClientId: appClientId
   CertificateAssetName: certificateAssetName
   ClientSecretVariableName: graphCredentialVariableName
-  ExtensionAttributeName: extensionAttributeName
-  EncryptedValue: extensionAttributeEncryptedValue
-  NotEncryptedValue: extensionAttributeNotEncryptedValue
   TargetOperatingSystem: targetOperatingSystem
   AllowValueTakeover: extensionAttributeAllowValueTakeover
   ClearManagedValuesForOutOfScopeDevices: clearManagedValuesForOutOfScopeDevices
@@ -290,7 +290,7 @@ resource graphAuthModule 'Microsoft.Automation/automationAccounts/powerShell72Mo
   }
 }
 
-resource runbook 'Microsoft.Automation/automationAccounts/runbooks@2023-11-01' = if (deployGroupSyncRunbook) {
+resource runbook 'Microsoft.Automation/automationAccounts/runbooks@2023-11-01' = if (deployGroupSyncRunbook && deployRunbookContentLinks) {
   parent: automationAccount
   name: runbookName
   location: location
@@ -308,7 +308,7 @@ resource runbook 'Microsoft.Automation/automationAccounts/runbooks@2023-11-01' =
   }
 }
 
-resource extensionAttributeRunbook 'Microsoft.Automation/automationAccounts/runbooks@2023-11-01' = if (deployExtensionAttributeRunbook) {
+resource extensionAttributeRunbook 'Microsoft.Automation/automationAccounts/runbooks@2023-11-01' = if (deployExtensionAttributeRunbook && deployRunbookContentLinks) {
   parent: automationAccount
   name: extensionAttributeRunbookName
   location: location
@@ -560,3 +560,10 @@ output extensionAttributeScheduleName string = deployExtensionAttributeRunbook ?
 
 @description('Parametri runtime del runbook extension attribute.')
 output extensionAttributeRunbookParameters object = extensionAttributeRunbookParameters
+
+@description('Valori iniziali usati da deploy.ps1 per creare, solo se assenti, le Automation Variables globali del mapping.')
+output extensionAttributeInitialValues object = {
+  name: extensionAttributeName
+  encrypted: extensionAttributeEncryptedValue
+  notEncrypted: extensionAttributeNotEncryptedValue
+}

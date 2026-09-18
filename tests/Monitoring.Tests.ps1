@@ -165,6 +165,7 @@ Describe 'Wiring in main.bicep' {
         @{ Name = 'enableSchedule' }
         @{ Name = 'authenticationMode' }
         @{ Name = 'deployGroupSyncRunbook' }
+        @{ Name = 'deployRunbookContentLinks' }
         @{ Name = 'deployExtensionAttributeRunbook' }
         @{ Name = 'extensionAttributeRunbookContentUri' }
         @{ Name = 'extensionAttributeName' }
@@ -255,11 +256,14 @@ Describe 'Wiring in main.bicep' {
         $script:text | Should -Match "name: extensionAttributeScheduleName"
         $script:text | Should -Match 'var extensionAttributeRunbookParameters = \{\}'
         $script:text | Should -Match 'var extensionAttributeRuntimeConfig = \{'
-        $script:text | Should -Match "ExtensionAttributeName: extensionAttributeName"
-        $script:text | Should -Match "EncryptedValue: extensionAttributeEncryptedValue"
-        $script:text | Should -Match "NotEncryptedValue: extensionAttributeNotEncryptedValue"
+        $script:text | Should -Not -Match "ExtensionAttributeName: extensionAttributeName"
+        $script:text | Should -Not -Match "EncryptedValue: extensionAttributeEncryptedValue"
+        $script:text | Should -Not -Match "NotEncryptedValue: extensionAttributeNotEncryptedValue"
         $script:text | Should -Match "AllowValueTakeover: extensionAttributeAllowValueTakeover"
         $script:text | Should -Match "name: 'BitLockerExtensionAttributeRuntimeConfig'"
+        $script:text | Should -Not -Match "name: 'BitLockerExtensionAttributeName'"
+        $script:text | Should -Not -Match "name: 'BitLockerExtensionAttributeEncryptedValue'"
+        $script:text | Should -Not -Match "name: 'BitLockerExtensionAttributeNotEncryptedValue'"
         $script:text | Should -Match "startTime: dateTimeAdd\(scheduleStartTime, 'PT30M'\)"
     }
 
@@ -270,7 +274,7 @@ Describe 'Wiring in main.bicep' {
 
     It 'Consente di distribuire separatamente il runbook GroupSync' {
         $script:text | Should -Match 'param deployGroupSyncRunbook bool = true'
-        $script:text | Should -Match "resource runbook .* = if \(deployGroupSyncRunbook\)"
+        $script:text | Should -Match "resource runbook .* = if \(deployGroupSyncRunbook && deployRunbookContentLinks\)"
         $script:text | Should -Match "resource runtimeConfigVar .* = if \(deployGroupSyncRunbook\)"
         $script:text | Should -Match 'monitoringPrimaryRunbookName = deployGroupSyncRunbook \? runbookName : extensionAttributeRunbookName'
     }

@@ -109,7 +109,7 @@
     configurata nel file .bicepparam.
 
 .NOTES
-    Version: 1.3.0
+    Version: 1.3.1
 
     Per visualizzare la guida completa:
         Get-Help .\deploy.ps1 -Full
@@ -671,12 +671,11 @@ function Initialize-ExtensionAttributeAutomationVariable {
         [Parameter(Mandatory)][string]$Value
     )
 
-    $existing = @(Get-AzAutomationVariable `
+    $automationVariables = @(Get-AzAutomationVariable `
             -ResourceGroupName $ResourceGroupName `
             -AutomationAccountName $AutomationAccountName `
-            -ErrorAction Stop |
-        Where-Object Name -eq $Name |
-        Select-Object -First 1)
+            -ErrorAction Stop)
+    $existing = @($automationVariables | Where-Object Name -eq $Name)[0]
     if ($existing) {
         if ($existing.Encrypted) {
             throw "Automation Variable '$Name' deve essere una String non cifrata."
@@ -934,7 +933,7 @@ else {
     @{
         solution  = 'BitLockerGroupSync'
         managedBy = 'deploy.ps1'
-        version   = '1.3.0'
+        version   = '1.3.1'
     }
 }
 $configuredScheduleIntervalHours = if ($null -ne $parameterValues.scheduleIntervalHours) {

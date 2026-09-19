@@ -91,9 +91,14 @@ Alla Managed Identity vengono assegnate esclusivamente:
 - DeviceManagementManagedDevices.Read.All
 - Device.ReadWrite.All
 
-Il login amministrativo tramite device code deve essere completato entro il
-tempo indicato dalla console. Se le permission sono state assegnate e verificate
-separatamente, sostituire -GrantGraphPermissions con -PermissionsConfirmed.
+L'account amministrativo può essere lo stesso già utilizzato per accedere ad
+Azure. Tuttavia, quando si usa -GrantGraphPermissions, lo script richiede una
+seconda autenticazione tramite device code perché l'assegnazione delle
+application permission usa Microsoft Graph, con token e scope differenti da
+quelli della sessione Azure. Completare l'autenticazione entro il tempo indicato
+dalla console. Se le permission sono state assegnate e verificate separatamente,
+sostituire -GrantGraphPermissions con -PermissionsConfirmed: in questo caso non
+viene richiesto il login Microsoft Graph aggiuntivo.
 
 AUTOMATION VARIABLES
 
@@ -235,7 +240,7 @@ Content-Transfer-Encoding: 8bit
                 <tr style="background:#edf4fb;"><td style="padding:11px 14px;border-bottom:1px solid #dbe3ec;font-family:Consolas,monospace;font-weight:600;">DeviceManagementManagedDevices.Read.All</td><td style="padding:11px 14px;border-bottom:1px solid #dbe3ec;">Lettura dello stato di cifratura dei device gestiti da Intune.</td></tr>
                 <tr><td style="padding:11px 14px;font-family:Consolas,monospace;font-weight:600;">Device.ReadWrite.All</td><td style="padding:11px 14px;">Lettura dei device Entra e aggiornamento dell'extension attribute.</td></tr>
               </table>
-              <p style="font-size:14px;line-height:1.65;margin:0 0 12px;color:#52606d;">Durante il deployment viene richiesto un login amministrativo tramite device code. Completare l'autenticazione nel browser entro il tempo indicato dalla console.</p>
+              <p style="font-size:14px;line-height:1.65;margin:0 0 12px;color:#52606d;">L'account amministrativo può essere lo stesso già utilizzato per accedere ad Azure. Tuttavia, quando si usa <code>-GrantGraphPermissions</code>, lo script richiede una seconda autenticazione tramite device code: l'assegnazione delle application permission utilizza Microsoft Graph, con token e scope differenti da quelli della sessione Azure. Completare l'autenticazione entro il tempo indicato dalla console. Con <code>-PermissionsConfirmed</code> non viene invece richiesto il login Graph aggiuntivo.</p>
               <p style="font-size:15px;line-height:1.65;margin:0 0 12px;">Se le permission sono già state assegnate e verificate separatamente, utilizzare:</p>
               <div class="command-line" style="width:100%;max-width:100%;box-sizing:border-box;background:#0d1117;border:1px solid #30363d;border-radius:5px;padding:16px 18px;margin:0 0 26px;white-space:normal;overflow-wrap:anywhere;word-wrap:break-word;word-break:break-word;font-family:Consolas,'Courier New',monospace;font-size:13px;line-height:1.6;"><span style="color:#79c0ff;">.\deploy.ps1</span> <span style="color:#d2a8ff;">-ResourceGroupName</span> <span style="color:#a5d6ff;">'&lt;RESOURCE-GROUP&gt;'</span> <span style="color:#d2a8ff;">-Location</span> <span style="color:#a5d6ff;">'&lt;REGIONE&gt;'</span> <span style="color:#d2a8ff;">-TenantId</span> <span style="color:#a5d6ff;">'&lt;TENANT-ID&gt;'</span> <span style="color:#d2a8ff;">-SubscriptionId</span> <span style="color:#a5d6ff;">'&lt;SUBSCRIPTION-ID&gt;'</span> <span style="color:#d2a8ff;">-RunbookSelection</span> <span style="color:#ffa657;">ExtensionAttribute</span> <span style="color:#d2a8ff;">-PermissionsConfirmed</span> <span style="color:#d2a8ff;">-StartExtensionAttributeJobNow</span></div>
 

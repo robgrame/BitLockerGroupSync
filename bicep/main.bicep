@@ -228,7 +228,7 @@ param notificationDetailLimit int = 50
 param tags object = {
   solution: 'BitLockerGroupSync'
   managedBy: 'bicep'
-  version: '1.5.2'
+  version: '1.5.3'
 }
 
 var graphAuthModuleUri = 'https://www.powershellgallery.com/api/v2/package/Microsoft.Graph.Authentication'

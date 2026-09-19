@@ -98,6 +98,7 @@ Describe 'Sintassi PowerShell' {
         It 'Blocca valori non gestiti senza consenso esplicito al takeover' {
             $script:extensionText | Should -Match '\$currentValue -notin @\(\$EncryptedValue, \$NotEncryptedValue\)'
             $script:extensionText | Should -Match '-not \$AllowValueTakeover'
+            $script:extensionText | Should -Match '\[EXTENSION_ATTRIBUTE_CONFLICT\]'
             $script:extensionText | Should -Match 'Nessuna modifica applicata'
         }
 
@@ -369,6 +370,15 @@ Describe 'Orchestrazione del deployment' {
         $script:deployText | Should -Match "Name 'BitLockerDeploymentDisabledWebhooks'"
         $script:deployText | Should -Match 'Save-DeploymentDisabledWebhook[\s\S]*if \(\$runtimeEnabled -and \$disabledWebhooks\.Count -gt 0\)'
         $script:deployText | Should -Match 'Enable-RunbookWebhook[\s\S]*Clear-DeploymentDisabledWebhook'
+    }
+    It 'Rimuove il workbook extension attribute quando viene deselezionato' {
+        $script:deployText | Should -Match 'function Remove-ExtensionAttributeWorkbookIfPresent'
+        $script:deployText | Should -Match "'Microsoft\.Insights/workbooks'"
+        $script:deployText | Should -Match '\$null -ne \$_.Tags'
+        $script:deployText | Should -Match '\$_\.Tags\[''workbook''\] -eq ''extension-attribute'''
+        $script:deployText | Should -Match '\$_\.Properties\.displayName -eq ''BitLocker Extension Attribute - Operations Overview v2'''
+        $script:deployText | Should -Match '\$_.Properties\.sourceId -eq \$WorkspaceResourceId'
+        $script:deployText | Should -Match '\$deployExtensionAttributeRunbook -and \$deployLogAnalytics -and \$deployMonitoring -and \$deployWorkbook'
     }
     It 'Installa Azure CLI, Bicep e i moduli PowerShell richiesti' {
         $script:deployText | Should -Match 'winget install --id Microsoft\.AzureCLI'

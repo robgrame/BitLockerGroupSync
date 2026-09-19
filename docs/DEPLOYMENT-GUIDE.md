@@ -170,7 +170,7 @@ group, usare `-SkipProviderRegistration`.
 
 ### Runbook extensionAttribute10
 
-La versione 1.3.2 può distribuire nello stesso Automation Account il runbook
+La versione 1.4.0 può distribuire nello stesso Automation Account il runbook
 `Sync-BitLockerExtensionAttribute`, che imposta sui device Entra:
 
 - `extensionAttribute10 = "enc"` quando Intune riporta `isEncrypted=true`;
@@ -542,6 +542,11 @@ Il job deve terminare `Completed` e i gruppi Entra devono contenere i device att
 Dopo il tempo di ingestion di Log Analytics, verificare:
 
 - esito job nel tempo;
+- il nuovo workbook **BitLocker Extension Attribute - Operations Overview v2**, creato
+  come risorsa separata senza sovrascrivere il workbook storico;
+- KPI dell'ultimo ciclo e trend di device valutati, conformi e aggiornati;
+- distribuzione degli aggiornamenti `enc` / `notenc`;
+- grafici di affidabilità, conflitti, errori, device non risolti e stato cifratura ignoto;
 - ultimi job;
 - errori recenti;
 - righe di riepilogo;

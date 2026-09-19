@@ -80,5 +80,5 @@ param tags = {
   solution: 'BitLockerGroupSync'
   managedBy: 'bicep'
   environment: 'prod'
-  version: '1.3.2'
+  version: '1.4.0'
 }

@@ -8,6 +8,7 @@ BeforeAll {
     $script:monitoring = Join-Path $bicepDir 'monitoring.bicep'
     $script:teams = Join-Path $bicepDir 'teams-logicapp.bicep'
     $script:workbook = Join-Path $bicepDir 'workbooks\runbook-monitoring.workbook.json'
+    $script:extensionWorkbook = Join-Path $bicepDir 'workbooks\extension-attribute-monitoring-v2.workbook.json'
 }
 
 Describe 'File di monitoraggio presenti' {
@@ -15,6 +16,7 @@ Describe 'File di monitoraggio presenti' {
         @{ Name = 'monitoring.bicep'; Path = { $script:monitoring } }
         @{ Name = 'teams-logicapp.bicep'; Path = { $script:teams } }
         @{ Name = 'workbook JSON'; Path = { $script:workbook } }
+        @{ Name = 'extension attribute workbook v2 JSON'; Path = { $script:extensionWorkbook } }
     ) {
         Test-Path (& $Path) | Should -BeTrue
     }
@@ -98,8 +100,37 @@ Describe 'Modulo monitoring.bicep' {
     It 'Inietta nel workbook il nome parametrico del runbook' {
         $script:text | Should -Match "replace\(loadTextContent\('workbooks/runbook-monitoring.workbook.json'\), '__RUNBOOK_NAME__', runbookName\)"
     }
+    It 'Crea una nuova versione separata del workbook extension attribute' {
+        $script:text | Should -Match "param extensionAttributeWorkbookRunbookName string"
+        $script:text | Should -Match "blkgm-extension-attribute-monitoring-v2"
+        $script:text | Should -Match "extension-attribute-monitoring-v2\.workbook\.json"
+        $script:text | Should -Match "BitLocker Extension Attribute - Operations Overview v2"
+        $script:text | Should -Match "version: '2\.0'"
+        $script:text | Should -Match "__EXTENSION_ATTRIBUTE_NAME__"
+    }
     It 'Le email ricevitori usano il common alert schema' {
         $script:text | Should -Match 'useCommonAlertSchema: true'
+    }
+
+    Describe 'Workbook extension attribute v2 JSON' {
+        BeforeAll { $script:extensionRaw = Get-Content $script:extensionWorkbook -Raw }
+
+        It 'E un JSON valido' {
+            { $script:extensionRaw | ConvertFrom-Json } | Should -Not -Throw
+        }
+        It 'Contiene placeholder e telemetria strutturata del secondo runbook' {
+            $script:extensionRaw | Should -Match '__EXTENSION_RUNBOOK_NAME__'
+            $script:extensionRaw | Should -Match '__EXTENSION_ATTRIBUTE_NAME__'
+            $script:extensionRaw | Should -Match '\[EXTENSION_ATTRIBUTE_CYCLE\]'
+            $script:extensionRaw | Should -Match '\[EXTENSION_ATTRIBUTE_UPDATE\]'
+            $script:extensionRaw | Should -Match '\[EXTENSION_ATTRIBUTE_CONFLICT\]'
+        }
+        It 'Predilige viste grafiche e KPI' {
+            $json = $script:extensionRaw | ConvertFrom-Json
+            $queries = @($json.items | Where-Object type -eq 3)
+            @($queries | Where-Object { $_.content.visualization -in @('tiles', 'timechart', 'columnchart', 'piechart', 'barchart') }).Count |
+                Should -BeGreaterOrEqual 6
+        }
     }
 }
 
@@ -190,6 +221,14 @@ Describe 'Wiring in main.bicep' {
         $script:text | Should -Match "module monitoring 'monitoring.bicep' = if \(deployMonitoring && deployLogAnalytics && !deployTeamsLogicApp && \(deployGroupSyncRunbook \|\| deployExtensionAttributeRunbook\)\)"
         $script:text | Should -Match "module monitoringWithTeams 'monitoring.bicep' = if \(deployMonitoring && deployLogAnalytics && deployTeamsLogicApp && \(deployGroupSyncRunbook \|\| deployExtensionAttributeRunbook\)\)"
     }
+    It 'Passa il runbook extension attribute al workbook dedicato' {
+        ([regex]::Matches($script:text, 'extensionAttributeWorkbookRunbookName: deployExtensionAttributeRunbook \? extensionAttributeRunbookName : ''''')).Count | Should -Be 2
+    }
+    It 'Espone il resource id del workbook dedicato' {
+        $script:text | Should -Match 'output extensionAttributeWorkbookId string'
+        $script:text | Should -Match 'monitoringWithTeams!\.outputs\.extensionAttributeWorkbookId'
+        $script:text | Should -Match 'monitoring!\.outputs\.extensionAttributeWorkbookId'
+    }
     It 'Usa un nome workspace indipendente dall Automation Account' {
         $script:text | Should -Match 'name: logAnalyticsWorkspaceName'
     }
@@ -256,9 +295,11 @@ Describe 'Wiring in main.bicep' {
         $script:text | Should -Match "name: extensionAttributeScheduleName"
         $script:text | Should -Match 'var extensionAttributeRunbookParameters = \{\}'
         $script:text | Should -Match 'var extensionAttributeRuntimeConfig = \{'
-        $script:text | Should -Not -Match "ExtensionAttributeName: extensionAttributeName"
-        $script:text | Should -Not -Match "EncryptedValue: extensionAttributeEncryptedValue"
-        $script:text | Should -Not -Match "NotEncryptedValue: extensionAttributeNotEncryptedValue"
+        $runtimeConfig = [regex]::Match($script:text, 'var extensionAttributeRuntimeConfig = \{(?<body>[\s\S]*?)\r?\n\}')
+        $runtimeConfig.Success | Should -BeTrue
+        $runtimeConfig.Groups['body'].Value | Should -Not -Match "ExtensionAttributeName: extensionAttributeName"
+        $runtimeConfig.Groups['body'].Value | Should -Not -Match "EncryptedValue: extensionAttributeEncryptedValue"
+        $runtimeConfig.Groups['body'].Value | Should -Not -Match "NotEncryptedValue: extensionAttributeNotEncryptedValue"
         $script:text | Should -Match "AllowValueTakeover: extensionAttributeAllowValueTakeover"
         $script:text | Should -Match "name: 'BitLockerExtensionAttributeRuntimeConfig'"
         $script:text | Should -Not -Match "name: 'BitLockerExtensionAttributeName'"

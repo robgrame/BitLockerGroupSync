@@ -13,7 +13,7 @@
     vengono ignorati e contabilizzati nel riepilogo.
 
 .NOTES
-    Version: 1.3.2
+    Version: 1.4.0
 
     Permessi Graph application richiesti:
       - DeviceManagementManagedDevices.Read.All
@@ -522,6 +522,15 @@ try {
             $managedState.UnknownEncryptionState)
 
     if ($conflicts.Count -gt 0) {
+        $conflictEvent = [ordered]@{
+            attribute = $ExtensionAttributeName
+            evaluated = $managedDevices.Count
+            conflicts = $conflicts.Count
+            unresolved = $unresolved
+            unknownEncryptionState = $managedState.UnknownEncryptionState
+        } | ConvertTo-Json -Compress
+        Write-Log "[EXTENSION_ATTRIBUTE_CONFLICT] $conflictEvent" 'ERROR'
+
         foreach ($conflict in $conflicts | Select-Object -First 20) {
             Write-Log ("Conflitto su device '{0}' ({1}): {2} contiene '{3}'." -f `
                     $conflict.deviceName,

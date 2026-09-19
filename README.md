@@ -4,7 +4,7 @@
 
 ### Dynamic Entra ID security groups driven by Intune BitLocker encryption state & recovery-key escrow
 
-**Versione soluzione: 1.3.2**
+**Versione soluzione: 1.4.0**
 
 [![PowerShell](https://img.shields.io/badge/PowerShell-7.2-5391FE?style=for-the-badge&logo=powershell&logoColor=white)](https://learn.microsoft.com/powershell/)
 [![Bicep](https://img.shields.io/badge/Bicep-IaC-00BCF2?style=for-the-badge&logo=microsoftazure&logoColor=white)](https://learn.microsoft.com/azure/azure-resource-manager/bicep/)
@@ -399,6 +399,10 @@ flowchart LR
   e, se abilitata la Logic App Teams (o valorizzato `alertActionWebhookUrl`), a un **webhook**.
 - **Workbook** *Nimbus.BitLockerGroupSync - Monitoring*: dashboard con trend degli esiti job,
   ultimi job, errori recenti, righe di riepilogo e dettaglio dei device aggiunti ai gruppi.
+- **Workbook** *BitLocker Extension Attribute - Operations Overview v2*: nuova dashboard
+  graph-first dedicata al secondo runbook, con KPI dell'ultimo ciclo, trend di valutati /
+  conformi / aggiornati, affidabilità dei job, distribuzione `enc` / `notenc`, anomalie,
+  device aggiornati più frequentemente e drill-down diagnostico.
 
 La vista **Device aggiunti ai gruppi** mostra data/ora, gruppo, nome device, object ID e job.
 I dati sono generati solo per aggiunte effettivamente riuscite e rispettano il filtro temporale

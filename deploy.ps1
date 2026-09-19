@@ -109,7 +109,7 @@
     configurata nel file .bicepparam.
 
 .NOTES
-    Version: 1.3.2
+    Version: 1.4.0
 
     Per visualizzare la guida completa:
         Get-Help .\deploy.ps1 -Full
@@ -736,6 +736,32 @@ function Remove-ResourceIfPresent {
     }
 }
 
+function Remove-ExtensionAttributeWorkbookIfPresent {
+    param(
+        [Parameter(Mandatory)][string]$ResourceGroupName,
+        [Parameter(Mandatory)][string]$WorkspaceResourceId
+    )
+
+    $workbooks = @(
+        Get-AzResource `
+            -ResourceGroupName $ResourceGroupName `
+            -ResourceType 'Microsoft.Insights/workbooks' `
+            -ExpandProperties `
+            -ErrorAction Stop |
+            Where-Object {
+                $null -ne $_.Tags -and
+                $_.Tags['workbook'] -eq 'extension-attribute' -and
+                $_.Tags['workbookVersion'] -eq '2.0' -and
+                $_.Properties.displayName -eq 'BitLocker Extension Attribute - Operations Overview v2' -and
+                $_.Properties.sourceId -eq $WorkspaceResourceId
+            }
+    )
+    foreach ($workbook in $workbooks) {
+        Write-Warning "Rimozione workbook extension attribute non selezionato '$($workbook.Name)'."
+        Remove-AzResource -ResourceId $workbook.ResourceId -Force -ErrorAction Stop
+    }
+}
+
 function Resolve-AutomationAccountName {
     param(
         [Parameter(Mandatory)][string]$RequestedName,
@@ -863,6 +889,12 @@ $configuredAutomationAccountName = if ($parameterValues.automationAccountName) {
 else {
     'aa-bitlocker-groupsync'
 }
+$configuredLogAnalyticsWorkspaceName = if ($parameterValues.logAnalyticsWorkspaceName) {
+    [string]$parameterValues.logAnalyticsWorkspaceName.value
+}
+else {
+    "$configuredAutomationAccountName-law"
+}
 $configuredRunbookName = if ($parameterValues.runbookName) {
     [string]$parameterValues.runbookName.value
 }
@@ -919,6 +951,24 @@ $deployRunbookContentLinks = if ($null -ne $parameterValues.deployRunbookContent
 else {
     $true
 }
+$deployLogAnalytics = if ($null -ne $parameterValues.deployLogAnalytics) {
+    [bool]$parameterValues.deployLogAnalytics.value
+}
+else {
+    $true
+}
+$deployMonitoring = if ($null -ne $parameterValues.deployMonitoring) {
+    [bool]$parameterValues.deployMonitoring.value
+}
+else {
+    $true
+}
+$deployWorkbook = if ($null -ne $parameterValues.deployWorkbook) {
+    [bool]$parameterValues.deployWorkbook.value
+}
+else {
+    $true
+}
 $configuredTags = if ($null -ne $parameterValues.tags) {
     ConvertTo-StringHashtable -InputObject $parameterValues.tags.value
 }
@@ -926,7 +976,7 @@ else {
     @{
         solution  = 'BitLockerGroupSync'
         managedBy = 'deploy.ps1'
-        version   = '1.3.2'
+        version   = '1.4.0'
     }
 }
 $configuredScheduleIntervalHours = if ($null -ne $parameterValues.scheduleIntervalHours) {
@@ -1193,6 +1243,7 @@ $rbName = [string]$deployment.Outputs.runbookName.Value
 $runbookParameters = ConvertTo-StringHashtable -InputObject $deployment.Outputs.runbookParameters.Value
 $directRunbookParameters = ConvertTo-DirectRunbookHashtable -Parameters $runbookParameters
 $extensionAttributeRunbookName = [string]$deployment.Outputs.extensionAttributeRunbookName.Value
+$extensionAttributeWorkbookId = [string]$deployment.Outputs.extensionAttributeWorkbookId.Value
 $extensionAttributeRunbookParameters = ConvertTo-StringHashtable `
     -InputObject $deployment.Outputs.extensionAttributeRunbookParameters.Value
 $extensionAttributeInitialValues = $deployment.Outputs.extensionAttributeInitialValues.Value
@@ -1367,6 +1418,12 @@ if (-not $deployExtensionAttributeRunbook) {
         -RunbookName $configuredExtensionAttributeRunbookName `
         -RuntimeVariableName 'BitLockerExtensionAttributeRuntimeConfig'
 }
+if (-not ($deployExtensionAttributeRunbook -and $deployLogAnalytics -and $deployMonitoring -and $deployWorkbook)) {
+    $configuredWorkspaceResourceId = "/subscriptions/$($context.Subscription.Id)/resourceGroups/$ResourceGroupName/providers/Microsoft.OperationalInsights/workspaces/$configuredLogAnalyticsWorkspaceName"
+    Remove-ExtensionAttributeWorkbookIfPresent `
+        -ResourceGroupName $ResourceGroupName `
+        -WorkspaceResourceId $configuredWorkspaceResourceId
+}
 if (-not ($deployGroupSyncRunbook -and $deployExtensionAttributeRunbook)) {
     Remove-ResourceIfPresent `
         -ResourceGroupName $ResourceGroupName `
@@ -1421,3 +1478,6 @@ if ($StartExtensionAttributeJobNow) {
 }
 
 Write-Host '==> Deploy completato.' -ForegroundColor Green
+if (-not [string]::IsNullOrWhiteSpace($extensionAttributeWorkbookId)) {
+    Write-Host "    Workbook extension attribute: $extensionAttributeWorkbookId" -ForegroundColor Green
+}

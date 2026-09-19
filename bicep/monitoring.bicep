@@ -21,6 +21,12 @@ param runbookName string
 @description('Secondo runbook opzionale da includere negli alert.')
 param extensionAttributeRunbookName string = ''
 
+@description('Runbook extension attribute da visualizzare nel workbook dedicato.')
+param extensionAttributeWorkbookRunbookName string = ''
+
+@description('Nome dell\'extension attribute visualizzato nel workbook dedicato.')
+param extensionAttributeName string = 'extensionAttribute10'
+
 @description('Indirizzi email a cui inviare gli alert.')
 param alertEmails array
 
@@ -288,5 +294,29 @@ resource workbook 'Microsoft.Insights/workbooks@2023-06-01' = if (deployWorkbook
   }
 }
 
+resource extensionAttributeWorkbook 'Microsoft.Insights/workbooks@2023-06-01' = if (deployWorkbook && !empty(extensionAttributeWorkbookRunbookName)) {
+  name: guid(logAnalyticsWorkspaceId, 'blkgm-extension-attribute-monitoring-v2')
+  location: location
+  tags: union(tags, {
+    workbook: 'extension-attribute'
+    workbookVersion: '2.0'
+  })
+  kind: 'shared'
+  properties: {
+    displayName: 'BitLocker Extension Attribute - Operations Overview v2'
+    serializedData: replace(
+      replace(loadTextContent('workbooks/extension-attribute-monitoring-v2.workbook.json'), '__EXTENSION_RUNBOOK_NAME__', extensionAttributeWorkbookRunbookName),
+      '__EXTENSION_ATTRIBUTE_NAME__',
+      extensionAttributeName
+    )
+    category: 'workbook'
+    sourceId: logAnalyticsWorkspaceId
+    version: '2.0'
+  }
+}
+
 @description('Resource id dell\'Action Group creato.')
 output actionGroupId string = actionGroup.id
+
+@description('Resource id del workbook extension attribute, se distribuito.')
+output extensionAttributeWorkbookId string = deployWorkbook && !empty(extensionAttributeWorkbookRunbookName) ? extensionAttributeWorkbook.id : ''

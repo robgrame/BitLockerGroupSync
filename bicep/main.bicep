@@ -210,7 +210,7 @@ param notificationDetailLimit int = 50
 param tags object = {
   solution: 'BitLockerGroupSync'
   managedBy: 'bicep'
-  version: '1.3.2'
+  version: '1.4.0'
 }
 
 var graphAuthModuleUri = 'https://www.powershellgallery.com/api/v2/package/Microsoft.Graph.Authentication'
@@ -493,6 +493,8 @@ module monitoring 'monitoring.bicep' = if (deployMonitoring && deployLogAnalytic
     logAnalyticsWorkspaceId: logAnalytics.id
     runbookName: monitoringPrimaryRunbookName
     extensionAttributeRunbookName: monitoringSecondaryRunbookName
+    extensionAttributeWorkbookRunbookName: deployExtensionAttributeRunbook ? extensionAttributeRunbookName : ''
+    extensionAttributeName: extensionAttributeName
     alertEmails: alertEmails
     alertActionWebhookUrl: alertActionWebhookUrl
     enableFailedAlert: enableFailedAlert
@@ -515,6 +517,8 @@ module monitoringWithTeams 'monitoring.bicep' = if (deployMonitoring && deployLo
     logAnalyticsWorkspaceId: logAnalytics.id
     runbookName: monitoringPrimaryRunbookName
     extensionAttributeRunbookName: monitoringSecondaryRunbookName
+    extensionAttributeWorkbookRunbookName: deployExtensionAttributeRunbook ? extensionAttributeRunbookName : ''
+    extensionAttributeName: extensionAttributeName
     alertEmails: alertEmails
     // Le condizioni dei due moduli sono allineate: la Logic App esiste sempre in questo ramo.
     #disable-next-line BCP318
@@ -567,3 +571,10 @@ output extensionAttributeInitialValues object = {
   encrypted: extensionAttributeEncryptedValue
   notEncrypted: extensionAttributeNotEncryptedValue
 }
+
+@description('Resource Id del workbook grafico dedicato al runbook extension attribute.')
+output extensionAttributeWorkbookId string = deployMonitoring && deployLogAnalytics && deployWorkbook && deployExtensionAttributeRunbook
+  ? (deployTeamsLogicApp
+      ? monitoringWithTeams!.outputs.extensionAttributeWorkbookId
+      : monitoring!.outputs.extensionAttributeWorkbookId)
+  : ''

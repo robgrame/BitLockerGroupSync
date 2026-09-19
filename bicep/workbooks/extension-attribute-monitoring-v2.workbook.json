@@ -1,0 +1,214 @@
+{
+  "version": "Notebook/1.0",
+  "items": [
+    {
+      "type": 1,
+      "content": {
+        "json": "# 🔐 BitLocker Extension Attribute — Operations Overview\n\nMonitoraggio visuale di **__EXTENSION_RUNBOOK_NAME__**. La dashboard evidenzia affidabilità, volume di sincronizzazione, copertura, conflitti e anomalie del mapping `__EXTENSION_ATTRIBUTE_NAME__`."
+      },
+      "name": "title"
+    },
+    {
+      "type": 9,
+      "content": {
+        "version": "KqlParameterItem/1.0",
+        "parameters": [
+          {
+            "id": "timeRange",
+            "version": "KqlParameterItem/1.0",
+            "name": "TimeRange",
+            "label": "Intervallo di analisi",
+            "type": 4,
+            "isRequired": true,
+            "value": {
+              "durationMs": 604800000
+            },
+            "typeSettings": {
+              "selectableValues": [
+                {
+                  "durationMs": 86400000
+                },
+                {
+                  "durationMs": 259200000
+                },
+                {
+                  "durationMs": 604800000
+                },
+                {
+                  "durationMs": 1209600000
+                },
+                {
+                  "durationMs": 2592000000
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "name": "parameters"
+    },
+    {
+      "type": 1,
+      "content": {
+        "json": "## Stato corrente\nI KPI derivano dall'ultimo ciclo disponibile e dai job compresi nell'intervallo selezionato."
+      },
+      "name": "current-state-title"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "let Cycles = AzureDiagnostics\n| where ResourceProvider == \"MICROSOFT.AUTOMATION\" and Category == \"JobStreams\"\n| where RunbookName_s == \"__EXTENSION_RUNBOOK_NAME__\"\n| where ResultDescription contains \"[EXTENSION_ATTRIBUTE_CYCLE]\"\n| extend Payload = parse_json(extract(@\"(\\{.*\\})\", 1, ResultDescription));\nlet Latest = Cycles\n| top 1 by TimeGenerated desc\n| project Valutati = tolong(Payload.evaluated), Aggiornati = tolong(Payload.updated), Errori = tolong(Payload.errors), NonRisolti = tolong(Payload.unresolved), StatoIgnoto = tolong(Payload.unknownEncryptionState), Compliant = tolong(Payload.compliant), UltimoCiclo = TimeGenerated;\nlet Jobs = AzureDiagnostics\n| where ResourceProvider == \"MICROSOFT.AUTOMATION\" and Category == \"JobLogs\"\n| where RunbookName_s == \"__EXTENSION_RUNBOOK_NAME__\"\n| summarize Completati = countif(ResultType == \"Completed\"), Falliti = countif(ResultType in (\"Failed\", \"Suspended\", \"Stopped\"));\nlet Conflicts = AzureDiagnostics\n| where ResourceProvider == \"MICROSOFT.AUTOMATION\" and Category == \"JobStreams\"\n| where RunbookName_s == \"__EXTENSION_RUNBOOK_NAME__\"\n| where ResultDescription contains \"[EXTENSION_ATTRIBUTE_CONFLICT]\"\n| extend Payload = parse_json(extract(@\"(\\{.*\\})\", 1, ResultDescription))\n| summarize Conflitti = sum(tolong(Payload.conflicts));\nunion\n(Latest | project Ordine = 1, KPI = \"Device valutati\", Valore = Valutati, Dettaglio = strcat(\"Ultimo ciclo: \", format_datetime(UltimoCiclo, \"dd/MM HH:mm\"))),\n(Latest | project Ordine = 2, KPI = \"Aggiornati\", Valore = Aggiornati, Dettaglio = \"Modifiche applicate\"),\n(Latest | project Ordine = 3, KPI = \"Già conformi\", Valore = Compliant, Dettaglio = \"Nessun update richiesto\"),\n(Conflicts | project Ordine = 4, KPI = \"Conflitti\", Valore = Conflitti, Dettaglio = \"Nel periodo selezionato\"),\n(Latest | project Ordine = 5, KPI = \"Errori\", Valore = Errori, Dettaglio = \"Errori ultimo ciclo\"),\n(Latest | project Ordine = 6, KPI = \"Non risolti\", Valore = NonRisolti, Dettaglio = \"Device senza match Entra\"),\n(Jobs | project Ordine = 7, KPI = \"Job completati\", Valore = Completati, Dettaglio = \"Nel periodo selezionato\"),\n(Jobs | project Ordine = 8, KPI = \"Job falliti\", Valore = Falliti, Dettaglio = \"Failed, Suspended o Stopped\")\n| order by Ordine asc",
+        "size": 4,
+        "title": "KPI operativi",
+        "timeContextFromParameter": "TimeRange",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces",
+        "visualization": "tiles",
+        "tileSettings": {
+          "titleContent": {
+            "columnMatch": "KPI",
+            "formatter": 1
+          },
+          "leftContent": {
+            "columnMatch": "Valore",
+            "formatter": 12,
+            "numberFormat": {
+              "unit": 0,
+              "options": {
+                "maximumSignificantDigits": 4
+              }
+            }
+          },
+          "secondaryContent": {
+            "columnMatch": "Dettaglio",
+            "formatter": 1
+          },
+          "showBorder": true
+        }
+      },
+      "name": "operational-kpis"
+    },
+    {
+      "type": 1,
+      "content": {
+        "json": "## Andamento sincronizzazione"
+      },
+      "name": "sync-trend-title"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "AzureDiagnostics\n| where ResourceProvider == \"MICROSOFT.AUTOMATION\" and Category == \"JobStreams\"\n| where RunbookName_s == \"__EXTENSION_RUNBOOK_NAME__\"\n| where ResultDescription contains \"[EXTENSION_ATTRIBUTE_CYCLE]\"\n| extend Payload = parse_json(extract(@\"(\\{.*\\})\", 1, ResultDescription))\n| project TimeGenerated, Valutati = tolong(Payload.evaluated), Compliant = tolong(Payload.compliant), Richiesti = tolong(Payload.requested), Aggiornati = tolong(Payload.updated)\n| order by TimeGenerated asc\n| render timechart",
+        "size": 0,
+        "title": "📈 Volume e risultato per ciclo",
+        "timeContextFromParameter": "TimeRange",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces",
+        "visualization": "timechart"
+      },
+      "name": "cycle-volume-trend"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "AzureDiagnostics\n| where ResourceProvider == \"MICROSOFT.AUTOMATION\" and Category == \"JobLogs\"\n| where RunbookName_s == \"__EXTENSION_RUNBOOK_NAME__\"\n| where ResultType in (\"Completed\", \"Failed\", \"Suspended\", \"Stopped\")\n| summarize Job = count() by bin(TimeGenerated, 1d), Esito = ResultType\n| order by TimeGenerated asc\n| render columnchart",
+        "size": 0,
+        "title": "📊 Affidabilità giornaliera dei job",
+        "timeContextFromParameter": "TimeRange",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces",
+        "visualization": "columnchart"
+      },
+      "name": "job-reliability"
+    },
+    {
+      "type": 1,
+      "content": {
+        "json": "## Distribuzione e qualità dei dati"
+      },
+      "name": "quality-title"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "AzureDiagnostics\n| where ResourceProvider == \"MICROSOFT.AUTOMATION\" and Category == \"JobStreams\"\n| where RunbookName_s == \"__EXTENSION_RUNBOOK_NAME__\"\n| where ResultDescription contains \"[EXTENSION_ATTRIBUTE_UPDATE]\"\n| extend Payload = parse_json(extract(@\"(\\{.*\\})\", 1, ResultDescription))\n| extend ValoreRaw = tostring(Payload.value)\n| extend Valore = iff(isempty(ValoreRaw), \"(azzerato)\", ValoreRaw)\n| summarize Aggiornamenti = count() by Valore\n| render piechart",
+        "size": 1,
+        "title": "🍩 Aggiornamenti per valore destinazione",
+        "timeContextFromParameter": "TimeRange",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces",
+        "visualization": "piechart"
+      },
+      "name": "value-distribution"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "let CycleAnomalies = AzureDiagnostics\n| where ResourceProvider == \"MICROSOFT.AUTOMATION\" and Category == \"JobStreams\"\n| where RunbookName_s == \"__EXTENSION_RUNBOOK_NAME__\"\n| where ResultDescription contains \"[EXTENSION_ATTRIBUTE_CYCLE]\"\n| extend Payload = parse_json(extract(@\"(\\{.*\\})\", 1, ResultDescription))\n| project TimeGenerated, Conflitti = long(0), Errori = tolong(Payload.errors), NonRisolti = tolong(Payload.unresolved), StatoIgnoto = tolong(Payload.unknownEncryptionState);\nlet ConflictAnomalies = AzureDiagnostics\n| where ResourceProvider == \"MICROSOFT.AUTOMATION\" and Category == \"JobStreams\"\n| where RunbookName_s == \"__EXTENSION_RUNBOOK_NAME__\"\n| where ResultDescription contains \"[EXTENSION_ATTRIBUTE_CONFLICT]\"\n| extend Payload = parse_json(extract(@\"(\\{.*\\})\", 1, ResultDescription))\n| project TimeGenerated, Conflitti = tolong(Payload.conflicts), Errori = long(0), NonRisolti = tolong(Payload.unresolved), StatoIgnoto = tolong(Payload.unknownEncryptionState);\nunion CycleAnomalies, ConflictAnomalies\n| order by TimeGenerated asc\n| render columnchart",
+        "size": 1,
+        "title": "⚠️ Anomalie per ciclo",
+        "timeContextFromParameter": "TimeRange",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces",
+        "visualization": "columnchart"
+      },
+      "name": "cycle-anomalies"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "AzureDiagnostics\n| where ResourceProvider == \"MICROSOFT.AUTOMATION\" and Category == \"JobStreams\"\n| where RunbookName_s == \"__EXTENSION_RUNBOOK_NAME__\"\n| where ResultDescription contains \"[EXTENSION_ATTRIBUTE_UPDATE]\"\n| extend Payload = parse_json(extract(@\"(\\{.*\\})\", 1, ResultDescription))\n| extend Device = tostring(Payload.deviceName), Valore = tostring(Payload.value)\n| where isnotempty(Device)\n| summarize Aggiornamenti = count() by Device, Valore\n| top 15 by Aggiornamenti desc\n| render barchart",
+        "size": 0,
+        "title": "🖥️ Device aggiornati più frequentemente",
+        "timeContextFromParameter": "TimeRange",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces",
+        "visualization": "barchart"
+      },
+      "name": "top-updated-devices"
+    },
+    {
+      "type": 1,
+      "content": {
+        "json": "## Diagnostica\nLe tabelle sono mantenute in fondo alla dashboard per il drill-down operativo."
+      },
+      "name": "diagnostics-title"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "AzureDiagnostics\n| where ResourceProvider == \"MICROSOFT.AUTOMATION\" and Category == \"JobStreams\"\n| where RunbookName_s == \"__EXTENSION_RUNBOOK_NAME__\"\n| where StreamType_s == \"Error\" or ResultDescription contains \"[ERROR]\"\n| project TimeGenerated, Tipo = StreamType_s, Dettaglio = ResultDescription, JobId = JobId_g\n| order by TimeGenerated desc\n| take 100",
+        "size": 0,
+        "title": "🚨 Errori e conflitti recenti",
+        "timeContextFromParameter": "TimeRange",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces",
+        "visualization": "table"
+      },
+      "name": "recent-errors"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "AzureDiagnostics\n| where ResourceProvider == \"MICROSOFT.AUTOMATION\" and Category == \"JobStreams\"\n| where RunbookName_s == \"__EXTENSION_RUNBOOK_NAME__\"\n| where ResultDescription contains \"[EXTENSION_ATTRIBUTE_UPDATE]\"\n| extend Payload = parse_json(extract(@\"(\\{.*\\})\", 1, ResultDescription))\n| project TimeGenerated, Device = tostring(Payload.deviceName), ValorePrecedente = tostring(Payload.previousValue), NuovoValore = tostring(Payload.value), Attributo = tostring(Payload.attribute), ObjectId = tostring(Payload.objectId), JobId = JobId_g\n| order by TimeGenerated desc\n| take 250",
+        "size": 0,
+        "title": "🔎 Ultimi aggiornamenti applicati",
+        "timeContextFromParameter": "TimeRange",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces",
+        "visualization": "table"
+      },
+      "name": "recent-updates"
+    }
+  ],
+  "fallbackResourceIds": [],
+  "$schema": "https://github.com/Microsoft/Application-Insights-Workbooks/blob/master/schema/workbook.json"
+}

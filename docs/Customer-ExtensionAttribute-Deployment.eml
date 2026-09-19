@@ -1,0 +1,271 @@
+From: "MODIFICARE MITTENTE" <sender@example.com>
+To: "MODIFICARE DESTINATARIO" <customer@example.com>
+Subject: Nimbus.BitLockerGroupSync - deployment del runbook Extension Attribute e del workbook operativo
+Date: Sat, 19 Sep 2026 19:13:13 +0200
+MIME-Version: 1.0
+X-Unsent: 1
+Content-Type: multipart/alternative; boundary="nimbus-extension-attribute-deployment"
+
+--nimbus-extension-attribute-deployment
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+Gentile Cliente,
+
+è disponibile la versione 1.5.1 di Nimbus.BitLockerGroupSync, che consente di
+distribuire il solo runbook Sync-BitLockerExtensionAttribute e il workbook
+BitLocker Extension Attribute - Operations Overview v2.
+
+Il runbook legge da Microsoft Intune lo stato di cifratura dei dispositivi
+Windows e aggiorna in Microsoft Entra ID:
+
+- extensionAttribute10 = enc per i dispositivi cifrati;
+- extensionAttribute10 = notenc per i dispositivi non cifrati.
+
+PREREQUISITI
+
+- PowerShell 7 e Azure CLI;
+- ruolo Contributor sul Resource Group di destinazione;
+- Privileged Role Administrator, o processo amministrativo equivalente, per
+  assegnare le application permission Microsoft Graph alla Managed Identity;
+- accesso al repository:
+  https://github.com/robgrame/Nimbus.BitLockerGroupSync
+
+PARAMETRI BICEP
+
+Configurare il file bicep\main.bicepparam incluso nella repository con i
+seguenti valori:
+
+- location: regione Azure delle risorse.
+- automationAccountName: Automation Account da creare o aggiornare.
+- logAnalyticsWorkspaceName: workspace usato da diagnostica, alert e workbook.
+- runbookContentUri: URL richiesto dal template per il primo runbook, non
+  distribuito quando deployGroupSyncRunbook=false.
+- deployRunbookContentLinks: true per importare il runbook dal repository
+  pubblico.
+- deployGroupSyncRunbook: false per non distribuire il primo runbook.
+- deployExtensionAttributeRunbook: true.
+- extensionAttributeRunbookContentUri: URL raw del secondo runbook, preferibilmente
+  fissato a uno specifico commit.
+- extensionAttributeName: extensionAttribute10.
+- extensionAttributeEncryptedValue: enc.
+- extensionAttributeNotEncryptedValue: notenc.
+- extensionAttributeAllowValueTakeover: false.
+- clearManagedValuesForOutOfScopeDevices: false.
+- targetOperatingSystem: Windows.
+- authenticationMode: ManagedIdentity.
+- managedIdentityName: nome della User Assigned Managed Identity.
+- extensionAttributeScheduleIntervalHours: frequenza della schedule, da 1 a 24 ore.
+- deployLogAnalytics: true.
+- deployMonitoring: true.
+- deployWorkbook: true.
+- enableSchedule: true.
+- alertEmails: eventuali destinatari degli alert.
+- enableFailedAlert, enableErrorAlert ed enableDeadmanAlert: true.
+- deadmanWindowHours: finestra del controllo di mancata esecuzione.
+- tags: metadati organizzativi e versione.
+
+COMANDO DI DEPLOYMENT ESCLUSIVO
+
+Eseguire dalla cartella principale del repository, su una singola riga:
+
+.\deploy.ps1 -ResourceGroupName '<RESOURCE-GROUP>' -Location '<REGIONE>' -TenantId '<TENANT-ID>' -SubscriptionId '<SUBSCRIPTION-ID>' -RunbookSelection ExtensionAttribute -GrantGraphPermissions -StartExtensionAttributeJobNow
+
+IMPORTANTE
+
+RunbookSelection ExtensionAttribute opera in modalità delta: distribuisce o
+aggiorna soltanto il secondo runbook e preserva il runbook GroupSync, la sua
+schedule, i webhook, le identità, l'accesso di rete e le permission esistenti.
+Utilizzare RunbookSelection All
+solo quando si desidera aggiornare entrambi i runbook.
+
+COMANDO PER MANTENERE ANCHE GROUPSYNC
+
+.\deploy.ps1 -ResourceGroupName '<RESOURCE-GROUP>' -Location '<REGIONE>' -TenantId '<TENANT-ID>' -SubscriptionId '<SUBSCRIPTION-ID>' -RunbookSelection All -GrantGraphPermissions -StartExtensionAttributeJobNow
+
+PERMISSION MICROSOFT GRAPH
+
+Alla Managed Identity vengono assegnate esclusivamente:
+
+- DeviceManagementManagedDevices.Read.All
+- Device.ReadWrite.All
+
+Il login amministrativo tramite device code deve essere completato entro il
+tempo indicato dalla console. Se le permission sono state assegnate e verificate
+separatamente, sostituire -GrantGraphPermissions con -PermissionsConfirmed.
+
+AUTOMATION VARIABLES
+
+Il deployment crea, solo se assenti:
+
+- BitLockerExtensionAttributeName = extensionAttribute10
+- BitLockerExtensionAttributeEncryptedValue = enc
+- BitLockerExtensionAttributeNotEncryptedValue = notenc
+
+I valori esistenti vengono preservati nei deployment successivi. Le variabili
+devono essere String non cifrate e possono essere modificate dall'Automation
+Account senza ripubblicare il runbook.
+
+VERIFICHE FINALI
+
+Verificare che:
+
+1. il runbook sia Published come PowerShell 7.2;
+2. la schedule sia abilitata e collegata;
+3. le tre Automation Variables abbiano i valori concordati;
+4. la Managed Identity disponga delle due permission Graph;
+5. il primo job termini Completed;
+6. i dispositivi abbiano extensionAttribute10 valorizzato con enc o notenc;
+7. il workbook v2 mostri KPI, trend, distribuzione dei valori, anomalie e
+   dettaglio degli aggiornamenti.
+
+Non trasmettere tramite email password, client secret, certificati PFX o URL
+webhook.
+
+Cordiali saluti
+
+--nimbus-extension-attribute-deployment
+Content-Type: text/html; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Deployment runbook Extension Attribute</title>
+</head>
+<body style="margin:0;padding:0;background:#eef2f6;font-family:Segoe UI,Arial,sans-serif;color:#172033;">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;min-width:100%;background:#eef2f6;border-collapse:collapse;">
+    <tr>
+      <td style="padding:0;">
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;background:#0b3a6e;border-collapse:collapse;">
+          <tr>
+            <td style="padding:34px 4%;color:#ffffff;">
+              <div style="font-size:13px;letter-spacing:1.5px;text-transform:uppercase;color:#9ed0ff;">Nimbus | Customer Delivery</div>
+              <div style="font-size:29px;font-weight:700;line-height:1.25;margin-top:7px;">Deployment Extension Attribute</div>
+              <div style="font-size:16px;line-height:1.5;margin-top:8px;color:#dcecff;">Runbook dedicato, nuove permission, Automation Variables e workbook operativo v2</div>
+            </td>
+          </tr>
+        </table>
+
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;background:#ffffff;border-collapse:collapse;">
+          <tr>
+            <td style="padding:30px 4%;">
+              <p style="font-size:16px;line-height:1.65;margin:0 0 18px;">Gentile Cliente,</p>
+              <p style="font-size:16px;line-height:1.65;margin:0 0 24px;">è disponibile la versione <strong>1.5.1</strong> di <strong>Nimbus.BitLockerGroupSync</strong>, che consente di distribuire il runbook <strong>Sync-BitLockerExtensionAttribute</strong> e il nuovo workbook <strong>BitLocker Extension Attribute - Operations Overview v2</strong>.</p>
+
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;background:#eef8f0;border:1px solid #b8d8c0;border-collapse:collapse;margin:0 0 26px;">
+                <tr>
+                  <td style="padding:17px 20px;border-left:6px solid #2e8540;font-size:15px;line-height:1.65;">
+                    <strong>Obiettivo.</strong> Il runbook legge da Microsoft Intune lo stato di cifratura dei dispositivi Windows e valorizza in Microsoft Entra ID <code style="font-family:Consolas,monospace;">extensionAttribute10</code> con <strong style="color:#237a38;">enc</strong> per i device cifrati e <strong style="color:#b54708;">notenc</strong> per quelli non cifrati.
+                  </td>
+                </tr>
+              </table>
+
+              <h2 style="font-size:21px;color:#0b3a6e;margin:0 0 13px;">1. Prerequisiti</h2>
+              <ul style="font-size:15px;line-height:1.75;margin:0 0 26px;padding-left:24px;">
+                <li>PowerShell 7 e Azure CLI sulla postazione di deployment.</li>
+                <li>Ruolo <strong>Contributor</strong> sul Resource Group di destinazione.</li>
+                <li><strong>Privileged Role Administrator</strong>, o processo amministrativo equivalente, per assegnare le application permission Microsoft Graph.</li>
+                <li>Accesso al repository <a href="https://github.com/robgrame/Nimbus.BitLockerGroupSync" style="color:#0067b8;font-weight:600;">Nimbus.BitLockerGroupSync</a>.</li>
+              </ul>
+
+              <h2 style="font-size:21px;color:#0b3a6e;margin:0 0 13px;">2. Parametri Bicep</h2>
+              <p style="font-size:15px;line-height:1.65;margin:0 0 14px;">Configurare il file <code style="font-family:Consolas,monospace;">bicep\main.bicepparam</code> incluso nella repository valorizzando i parametri seguenti.</p>
+
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;border:1px solid #cbd5e1;border-collapse:collapse;margin:0 0 28px;font-size:13px;">
+                <tr style="background:#0b3a6e;color:#ffffff;">
+                  <th align="left" style="padding:11px 12px;border-right:1px solid #315b87;">Parametro</th>
+                  <th align="left" style="padding:11px 12px;border-right:1px solid #315b87;">Valore consigliato</th>
+                  <th align="left" style="padding:11px 12px;">Significato</th>
+                </tr>
+                <tr style="background:#f8fafc;"><td style="padding:10px 12px;border:1px solid #dbe3ec;font-family:Consolas,monospace;">location</td><td style="padding:10px 12px;border:1px solid #dbe3ec;"><code>'italynorth'</code></td><td style="padding:10px 12px;border:1px solid #dbe3ec;">Regione Azure delle risorse.</td></tr>
+                <tr><td style="padding:10px 12px;border:1px solid #dbe3ec;font-family:Consolas,monospace;">automationAccountName</td><td style="padding:10px 12px;border:1px solid #dbe3ec;"><code>'&lt;AUTOMATION-ACCOUNT&gt;'</code></td><td style="padding:10px 12px;border:1px solid #dbe3ec;">Automation Account da creare o aggiornare.</td></tr>
+                <tr style="background:#f8fafc;"><td style="padding:10px 12px;border:1px solid #dbe3ec;font-family:Consolas,monospace;">logAnalyticsWorkspaceName</td><td style="padding:10px 12px;border:1px solid #dbe3ec;"><code>'&lt;LOG-ANALYTICS&gt;'</code></td><td style="padding:10px 12px;border:1px solid #dbe3ec;">Workspace per diagnostica, alert e workbook.</td></tr>
+                <tr><td style="padding:10px 12px;border:1px solid #dbe3ec;font-family:Consolas,monospace;">runbookContentUri</td><td style="padding:10px 12px;border:1px solid #dbe3ec;"><code>'&lt;URL RAW PRIMO RUNBOOK&gt;'</code></td><td style="padding:10px 12px;border:1px solid #dbe3ec;">Parametro richiesto dal template; il primo runbook non viene distribuito quando il relativo flag è false.</td></tr>
+                <tr style="background:#f8fafc;"><td style="padding:10px 12px;border:1px solid #dbe3ec;font-family:Consolas,monospace;">deployRunbookContentLinks</td><td style="padding:10px 12px;border:1px solid #dbe3ec;"><code>true</code></td><td style="padding:10px 12px;border:1px solid #dbe3ec;">Importa il contenuto dal repository pubblico.</td></tr>
+                <tr><td style="padding:10px 12px;border:1px solid #dbe3ec;font-family:Consolas,monospace;">deployGroupSyncRunbook</td><td style="padding:10px 12px;border:1px solid #dbe3ec;"><code>false</code></td><td style="padding:10px 12px;border:1px solid #dbe3ec;">Esclude il runbook di gestione gruppi.</td></tr>
+                <tr style="background:#f8fafc;"><td style="padding:10px 12px;border:1px solid #dbe3ec;font-family:Consolas,monospace;">deployExtensionAttributeRunbook</td><td style="padding:10px 12px;border:1px solid #dbe3ec;"><code>true</code></td><td style="padding:10px 12px;border:1px solid #dbe3ec;">Abilita il secondo runbook.</td></tr>
+                <tr><td style="padding:10px 12px;border:1px solid #dbe3ec;font-family:Consolas,monospace;">extensionAttributeRunbookContentUri</td><td style="padding:10px 12px;border:1px solid #dbe3ec;"><code>'https://raw.githubusercontent.com/robgrame/Nimbus.BitLockerGroupSync/&lt;COMMIT-SHA&gt;/runbook/Sync-BitLockerExtensionAttribute.ps1'</code></td><td style="padding:10px 12px;border:1px solid #dbe3ec;">URL immutabile del runbook da pubblicare.</td></tr>
+                <tr style="background:#f8fafc;"><td style="padding:10px 12px;border:1px solid #dbe3ec;font-family:Consolas,monospace;">extensionAttributeName</td><td style="padding:10px 12px;border:1px solid #dbe3ec;"><code>'extensionAttribute10'</code></td><td style="padding:10px 12px;border:1px solid #dbe3ec;">Attributo Entra aggiornato dal runbook.</td></tr>
+                <tr><td style="padding:10px 12px;border:1px solid #dbe3ec;font-family:Consolas,monospace;">extensionAttributeEncryptedValue</td><td style="padding:10px 12px;border:1px solid #dbe3ec;"><code>'enc'</code></td><td style="padding:10px 12px;border:1px solid #dbe3ec;">Valore assegnato ai device cifrati.</td></tr>
+                <tr style="background:#f8fafc;"><td style="padding:10px 12px;border:1px solid #dbe3ec;font-family:Consolas,monospace;">extensionAttributeNotEncryptedValue</td><td style="padding:10px 12px;border:1px solid #dbe3ec;"><code>'notenc'</code></td><td style="padding:10px 12px;border:1px solid #dbe3ec;">Valore assegnato ai device non cifrati.</td></tr>
+                <tr><td style="padding:10px 12px;border:1px solid #dbe3ec;font-family:Consolas,monospace;">extensionAttributeAllowValueTakeover</td><td style="padding:10px 12px;border:1px solid #dbe3ec;"><code>false</code></td><td style="padding:10px 12px;border:1px solid #dbe3ec;">Impedisce la sovrascrittura di valori estranei alla soluzione.</td></tr>
+                <tr style="background:#f8fafc;"><td style="padding:10px 12px;border:1px solid #dbe3ec;font-family:Consolas,monospace;">clearManagedValuesForOutOfScopeDevices</td><td style="padding:10px 12px;border:1px solid #dbe3ec;"><code>false</code></td><td style="padding:10px 12px;border:1px solid #dbe3ec;">Non azzera automaticamente i valori dei device fuori perimetro.</td></tr>
+                <tr><td style="padding:10px 12px;border:1px solid #dbe3ec;font-family:Consolas,monospace;">targetOperatingSystem</td><td style="padding:10px 12px;border:1px solid #dbe3ec;"><code>'Windows'</code></td><td style="padding:10px 12px;border:1px solid #dbe3ec;">Sistema operativo incluso nella sincronizzazione.</td></tr>
+                <tr style="background:#f8fafc;"><td style="padding:10px 12px;border:1px solid #dbe3ec;font-family:Consolas,monospace;">authenticationMode</td><td style="padding:10px 12px;border:1px solid #dbe3ec;"><code>'ManagedIdentity'</code></td><td style="padding:10px 12px;border:1px solid #dbe3ec;">Autenticazione senza secret, raccomandata.</td></tr>
+                <tr><td style="padding:10px 12px;border:1px solid #dbe3ec;font-family:Consolas,monospace;">managedIdentityName</td><td style="padding:10px 12px;border:1px solid #dbe3ec;"><code>'&lt;UAMI-NAME&gt;'</code></td><td style="padding:10px 12px;border:1px solid #dbe3ec;">User Assigned Managed Identity collegata all'Automation Account.</td></tr>
+                <tr style="background:#f8fafc;"><td style="padding:10px 12px;border:1px solid #dbe3ec;font-family:Consolas,monospace;">extensionAttributeScheduleIntervalHours</td><td style="padding:10px 12px;border:1px solid #dbe3ec;"><code>1</code></td><td style="padding:10px 12px;border:1px solid #dbe3ec;">Frequenza della schedule, da 1 a 24 ore.</td></tr>
+                <tr><td style="padding:10px 12px;border:1px solid #dbe3ec;font-family:Consolas,monospace;">enableSchedule</td><td style="padding:10px 12px;border:1px solid #dbe3ec;"><code>true</code></td><td style="padding:10px 12px;border:1px solid #dbe3ec;">Attiva la pianificazione dopo la conferma delle permission.</td></tr>
+                <tr style="background:#f8fafc;"><td style="padding:10px 12px;border:1px solid #dbe3ec;font-family:Consolas,monospace;">deployLogAnalytics</td><td style="padding:10px 12px;border:1px solid #dbe3ec;"><code>true</code></td><td style="padding:10px 12px;border:1px solid #dbe3ec;">Abilita raccolta e conservazione della telemetria.</td></tr>
+                <tr><td style="padding:10px 12px;border:1px solid #dbe3ec;font-family:Consolas,monospace;">deployMonitoring</td><td style="padding:10px 12px;border:1px solid #dbe3ec;"><code>true</code></td><td style="padding:10px 12px;border:1px solid #dbe3ec;">Crea Action Group, alert e componenti di monitoraggio.</td></tr>
+                <tr style="background:#f8fafc;"><td style="padding:10px 12px;border:1px solid #dbe3ec;font-family:Consolas,monospace;">deployWorkbook</td><td style="padding:10px 12px;border:1px solid #dbe3ec;"><code>true</code></td><td style="padding:10px 12px;border:1px solid #dbe3ec;">Crea il workbook grafico dedicato.</td></tr>
+                <tr><td style="padding:10px 12px;border:1px solid #dbe3ec;font-family:Consolas,monospace;">alertEmails</td><td style="padding:10px 12px;border:1px solid #dbe3ec;"><code>[]</code> oppure elenco indirizzi</td><td style="padding:10px 12px;border:1px solid #dbe3ec;">Destinatari degli alert operativi.</td></tr>
+                <tr style="background:#f8fafc;"><td style="padding:10px 12px;border:1px solid #dbe3ec;font-family:Consolas,monospace;">enableFailedAlert / enableErrorAlert / enableDeadmanAlert</td><td style="padding:10px 12px;border:1px solid #dbe3ec;"><code>true</code></td><td style="padding:10px 12px;border:1px solid #dbe3ec;">Abilita gli alert su fallimenti, errori e assenza di esecuzioni.</td></tr>
+                <tr><td style="padding:10px 12px;border:1px solid #dbe3ec;font-family:Consolas,monospace;">deadmanWindowHours</td><td style="padding:10px 12px;border:1px solid #dbe3ec;"><code>12</code></td><td style="padding:10px 12px;border:1px solid #dbe3ec;">Ore senza job completati prima dell'attivazione dell'alert.</td></tr>
+                <tr style="background:#f8fafc;"><td style="padding:10px 12px;border:1px solid #dbe3ec;font-family:Consolas,monospace;">tags</td><td style="padding:10px 12px;border:1px solid #dbe3ec;"><code>{ environment, owner, costCenter }</code></td><td style="padding:10px 12px;border:1px solid #dbe3ec;">Metadati organizzativi applicati alle risorse.</td></tr>
+              </table>
+
+              <h2 style="font-size:21px;color:#0b3a6e;margin:0 0 13px;">3. Deployment esclusivo</h2>
+              <p style="font-size:15px;line-height:1.65;margin:0 0 12px;">Dalla cartella principale del repository eseguire il comando seguente. La command line è intenzionalmente mantenuta su una singola riga.</p>
+              <div style="width:100%;box-sizing:border-box;background:#0d1117;border:1px solid #30363d;border-radius:5px;padding:16px 18px;margin:0 0 22px;overflow-x:auto;white-space:nowrap;font-family:Consolas,'Courier New',monospace;font-size:13px;line-height:1.6;"><span style="color:#79c0ff;">.\deploy.ps1</span> <span style="color:#d2a8ff;">-ResourceGroupName</span> <span style="color:#a5d6ff;">'&lt;RESOURCE-GROUP&gt;'</span> <span style="color:#d2a8ff;">-Location</span> <span style="color:#a5d6ff;">'&lt;REGIONE&gt;'</span> <span style="color:#d2a8ff;">-TenantId</span> <span style="color:#a5d6ff;">'&lt;TENANT-ID&gt;'</span> <span style="color:#d2a8ff;">-SubscriptionId</span> <span style="color:#a5d6ff;">'&lt;SUBSCRIPTION-ID&gt;'</span> <span style="color:#d2a8ff;">-RunbookSelection</span> <span style="color:#ffa657;">ExtensionAttribute</span> <span style="color:#d2a8ff;">-GrantGraphPermissions</span> <span style="color:#d2a8ff;">-StartExtensionAttributeJobNow</span></div>
+
+              <div style="background:#fff4e5;border:1px solid #f0c36d;border-left:6px solid #d97706;padding:17px 20px;margin:0 0 26px;font-size:15px;line-height:1.65;">
+                <strong>Deployment in delta.</strong> <code>RunbookSelection ExtensionAttribute</code> distribuisce o aggiorna soltanto il secondo runbook e preserva GroupSync, la sua schedule, i webhook, le identità assegnate, l'accesso di rete e le permission esistenti. Utilizzare <code>RunbookSelection All</code> solo quando si desidera aggiornare entrambi i runbook. La rimozione dei componenti non selezionati avviene esclusivamente aggiungendo lo switch esplicito <code>-FullReconcile</code>.
+              </div>
+
+              <p style="font-size:15px;line-height:1.65;margin:0 0 12px;"><strong>Aggiornamento completo:</strong> per aggiornare entrambi i runbook utilizzare il comando seguente.</p>
+              <div style="width:100%;box-sizing:border-box;background:#0d1117;border:1px solid #30363d;border-radius:5px;padding:16px 18px;margin:0 0 26px;overflow-x:auto;white-space:nowrap;font-family:Consolas,'Courier New',monospace;font-size:13px;line-height:1.6;"><span style="color:#79c0ff;">.\deploy.ps1</span> <span style="color:#d2a8ff;">-ResourceGroupName</span> <span style="color:#a5d6ff;">'&lt;RESOURCE-GROUP&gt;'</span> <span style="color:#d2a8ff;">-Location</span> <span style="color:#a5d6ff;">'&lt;REGIONE&gt;'</span> <span style="color:#d2a8ff;">-TenantId</span> <span style="color:#a5d6ff;">'&lt;TENANT-ID&gt;'</span> <span style="color:#d2a8ff;">-SubscriptionId</span> <span style="color:#a5d6ff;">'&lt;SUBSCRIPTION-ID&gt;'</span> <span style="color:#d2a8ff;">-RunbookSelection</span> <span style="color:#ffa657;">All</span> <span style="color:#d2a8ff;">-GrantGraphPermissions</span> <span style="color:#d2a8ff;">-StartExtensionAttributeJobNow</span></div>
+
+              <h2 style="font-size:21px;color:#0b3a6e;margin:0 0 13px;">4. Permission Microsoft Graph</h2>
+              <p style="font-size:15px;line-height:1.65;margin:0 0 14px;">Per la selezione ExtensionAttribute, alla Managed Identity vengono assegnate esclusivamente le permission applicative necessarie:</p>
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;border:1px solid #cbd5e1;border-collapse:collapse;margin:0 0 18px;font-size:14px;">
+                <tr style="background:#edf4fb;"><td style="padding:11px 14px;border-bottom:1px solid #dbe3ec;font-family:Consolas,monospace;font-weight:600;">DeviceManagementManagedDevices.Read.All</td><td style="padding:11px 14px;border-bottom:1px solid #dbe3ec;">Lettura dello stato di cifratura dei device gestiti da Intune.</td></tr>
+                <tr><td style="padding:11px 14px;font-family:Consolas,monospace;font-weight:600;">Device.ReadWrite.All</td><td style="padding:11px 14px;">Lettura dei device Entra e aggiornamento dell'extension attribute.</td></tr>
+              </table>
+              <p style="font-size:14px;line-height:1.65;margin:0 0 12px;color:#52606d;">Durante il deployment viene richiesto un login amministrativo tramite device code. Completare l'autenticazione nel browser entro il tempo indicato dalla console.</p>
+              <p style="font-size:15px;line-height:1.65;margin:0 0 12px;">Se le permission sono già state assegnate e verificate separatamente, utilizzare:</p>
+              <div style="width:100%;box-sizing:border-box;background:#0d1117;border:1px solid #30363d;border-radius:5px;padding:16px 18px;margin:0 0 26px;overflow-x:auto;white-space:nowrap;font-family:Consolas,'Courier New',monospace;font-size:13px;line-height:1.6;"><span style="color:#79c0ff;">.\deploy.ps1</span> <span style="color:#d2a8ff;">-ResourceGroupName</span> <span style="color:#a5d6ff;">'&lt;RESOURCE-GROUP&gt;'</span> <span style="color:#d2a8ff;">-Location</span> <span style="color:#a5d6ff;">'&lt;REGIONE&gt;'</span> <span style="color:#d2a8ff;">-TenantId</span> <span style="color:#a5d6ff;">'&lt;TENANT-ID&gt;'</span> <span style="color:#d2a8ff;">-SubscriptionId</span> <span style="color:#a5d6ff;">'&lt;SUBSCRIPTION-ID&gt;'</span> <span style="color:#d2a8ff;">-RunbookSelection</span> <span style="color:#ffa657;">ExtensionAttribute</span> <span style="color:#d2a8ff;">-PermissionsConfirmed</span> <span style="color:#d2a8ff;">-StartExtensionAttributeJobNow</span></div>
+
+              <h2 style="font-size:21px;color:#0b3a6e;margin:0 0 13px;">5. Automation Variables</h2>
+              <p style="font-size:15px;line-height:1.65;margin:0 0 14px;">Il deployment crea le variabili seguenti solo se non esistono già. I valori presenti vengono preservati nei deployment successivi.</p>
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;border:1px solid #cbd5e1;border-collapse:collapse;margin:0 0 26px;font-size:14px;">
+                <tr style="background:#0b3a6e;color:#ffffff;"><th align="left" style="padding:11px 14px;border-right:1px solid #315b87;">Automation Variable</th><th align="left" style="padding:11px 14px;border-right:1px solid #315b87;">Valore iniziale</th><th align="left" style="padding:11px 14px;">Utilizzo</th></tr>
+                <tr style="background:#f8fafc;"><td style="padding:11px 14px;border:1px solid #dbe3ec;font-family:Consolas,monospace;">BitLockerExtensionAttributeName</td><td style="padding:11px 14px;border:1px solid #dbe3ec;"><code>extensionAttribute10</code></td><td style="padding:11px 14px;border:1px solid #dbe3ec;">Nome dell'attributo Entra gestito.</td></tr>
+                <tr><td style="padding:11px 14px;border:1px solid #dbe3ec;font-family:Consolas,monospace;">BitLockerExtensionAttributeEncryptedValue</td><td style="padding:11px 14px;border:1px solid #dbe3ec;"><code>enc</code></td><td style="padding:11px 14px;border:1px solid #dbe3ec;">Valore associato a un device cifrato.</td></tr>
+                <tr style="background:#f8fafc;"><td style="padding:11px 14px;border:1px solid #dbe3ec;font-family:Consolas,monospace;">BitLockerExtensionAttributeNotEncryptedValue</td><td style="padding:11px 14px;border:1px solid #dbe3ec;"><code>notenc</code></td><td style="padding:11px 14px;border:1px solid #dbe3ec;">Valore associato a un device non cifrato.</td></tr>
+              </table>
+
+              <h2 style="font-size:21px;color:#0b3a6e;margin:0 0 13px;">6. Verifiche finali</h2>
+              <ol style="font-size:15px;line-height:1.75;margin:0 0 24px;padding-left:24px;">
+                <li>Il runbook risulta <strong>Published</strong> con runtime <strong>PowerShell 7.2</strong>.</li>
+                <li>La schedule è abilitata e collegata al runbook.</li>
+                <li>Le tre Automation Variables contengono i valori concordati e non sono cifrate.</li>
+                <li>La Managed Identity dispone delle due permission Microsoft Graph indicate.</li>
+                <li>Il primo job termina con stato <strong>Completed</strong>.</li>
+                <li>I device Entra mostrano <code>extensionAttribute10</code> valorizzato con <code>enc</code> o <code>notenc</code>.</li>
+                <li>Il workbook v2 visualizza KPI, trend, distribuzione valori, anomalie e dettaglio aggiornamenti.</li>
+              </ol>
+
+              <div style="background:#fdecec;border:1px solid #efb3b3;border-left:6px solid #b42318;padding:17px 20px;margin:0 0 26px;font-size:15px;line-height:1.65;">
+                <strong>Sicurezza.</strong> Non trasmettere tramite email password, client secret, certificati PFX, URL webhook o altre credenziali. Utilizzare esclusivamente il canale sicuro concordato.
+              </div>
+
+              <p style="font-size:16px;line-height:1.65;margin:0;">Cordiali saluti</p>
+            </td>
+          </tr>
+        </table>
+
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;background:#172033;border-collapse:collapse;">
+          <tr>
+            <td style="padding:20px 4%;font-size:12px;line-height:1.6;color:#c9d3df;">Nimbus.BitLockerGroupSync · Deployment Extension Attribute v1.5.1<br>Mittente, destinatario, segnaposto e firma sono modificabili aprendo il file EML come bozza.</td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+
+--nimbus-extension-attribute-deployment--

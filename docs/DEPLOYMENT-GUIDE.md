@@ -217,10 +217,9 @@ solo:
 ```
 
 Con `-GrantGraphPermissions` e autenticazione Managed Identity, gli app role
-Graph vengono riconciliati con la selezione: sono assegnati quelli necessari e
-revocati gli altri app role gestiti dalla soluzione. `BitlockerKey.Read.All`
-viene mantenuto solo quando il runbook GroupSync è selezionato e
-`enableKeyEscrowCheck=true`.
+Graph necessari vengono aggiunti senza revocare quelli già presenti.
+`BitlockerKey.Read.All` viene richiesto quando il runbook GroupSync è selezionato
+e `enableKeyEscrowCheck=true`.
 
 Il flusso assistito è fail-closed: il primo passaggio Bicep mantiene schedule e
 dead-man alert disabilitati, il login amministrativo riconcilia i permessi e un
@@ -228,9 +227,13 @@ secondo passaggio abilita il runtime. Se il grant fallisce o viene annullato, i
 job non restano collegati alle schedule.
 
 Se `-RunbookSelection` viene omesso, prevalgono i flag del file `.bicepparam`.
-Una selezione esplicita è anche dichiarativa: gli artefatti Automation del
-runbook escluso e il relativo dead-man alert secondario vengono rimossi dopo un
-deployment riuscito.
+La selezione opera in modalità delta: runbook, schedule, webhook, configurazione
+runtime, workbook e permission appartenenti ai componenti non selezionati non
+vengono rimossi. Il deployment preserva inoltre le identità già assegnate e lo
+stato di accesso pubblico dell'Automation Account esistente. Per una
+riconciliazione completa e intenzionalmente distruttiva,
+usare `-FullReconcile`; con `-GrantGraphPermissions` verranno revocati anche gli
+app role gestiti non più necessari.
 
 Se la repository è privata, impostare `deployRunbookContentLinks=false`.
 L'orchestratore importerà e pubblicherà i runbook dai file locali dopo il primo

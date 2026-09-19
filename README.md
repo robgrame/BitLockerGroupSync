@@ -4,7 +4,7 @@
 
 ### Dynamic Entra ID security groups driven by Intune BitLocker encryption state & recovery-key escrow
 
-**Versione soluzione: 1.4.0**
+**Versione soluzione: 1.5.1**
 
 [![PowerShell](https://img.shields.io/badge/PowerShell-7.2-5391FE?style=for-the-badge&logo=powershell&logoColor=white)](https://learn.microsoft.com/powershell/)
 [![Bicep](https://img.shields.io/badge/Bicep-IaC-00BCF2?style=for-the-badge&logo=microsoftazure&logoColor=white)](https://learn.microsoft.com/azure/azure-resource-manager/bicep/)
@@ -185,7 +185,7 @@ separazione Azure/Entra, verifiche, rollback e handover, vedere
   -SubscriptionId '<subscription-id>'
 ```
 
-La selezione dei runbook è esplicita:
+La selezione dei runbook è esplicita e opera in modalità delta:
 
 ```powershell
 # Entrambi
@@ -203,7 +203,7 @@ permessi Graph richiesti dalla selezione. `ExtensionAttribute` richiede
 `DeviceManagementManagedDevices.Read.All` e `Device.ReadWrite.All`; `GroupSync` e
 `All` includono i permessi per creazione gruppi e membership e aggiungono
 `BitlockerKey.Read.All` soltanto quando `enableKeyEscrowCheck=true`.
-Gli app role gestiti dalla soluzione ma non più necessari vengono revocati.
+Gli app role già presenti non vengono revocati in modalità delta.
 In questa modalità il deployment crea o aggiorna prima l'infrastruttura con i
 job schedulati disabilitati, completa il grant amministrativo e solo dopo abilita
 schedule e dead-man alert. Un grant interrotto non lascia job attivi.
@@ -213,9 +213,13 @@ Per repository privati impostare `deployRunbookContentLinks=false` nel file
 locali, evitando content link GitHub non autenticabili da Azure Automation.
 
 Se `-RunbookSelection` viene omesso, sono rispettati i flag nel file
-`.bicepparam`. Quando la selezione esclude un runbook già distribuito, il deploy
-ne rimuove collegamenti schedulati, schedule, runbook e variabile runtime; rimuove
-inoltre l'alert dead-man secondario non più necessario.
+`.bicepparam`. I runbook non selezionati, le relative schedule, i webhook, le
+variabili runtime, i workbook e le permission Graph esistenti non vengono
+modificati. Anche le identità assegnate e lo stato di accesso pubblico
+dell'Automation Account esistente vengono preservati. Per applicare invece la
+selezione come stato finale esclusivo,
+eliminando gli artefatti gestiti non selezionati e riconciliando le permission,
+aggiungere esplicitamente `-FullReconcile`.
 
 Lo script installa Azure CLI, Bicep e moduli mancanti, crea il resource group e
 distribuisce il Bicep senza attivare la schedule. Le comunicazioni EML per

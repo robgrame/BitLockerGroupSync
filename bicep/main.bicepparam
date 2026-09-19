@@ -6,6 +6,7 @@ using './main.bicep'
 
 param location = 'italynorth'
 param automationAccountName = 'aa-encrypted-devices'
+param automationAccountPublicNetworkAccess = true
 param logAnalyticsWorkspaceName = 'aa-bitlocker-groupsync-law'
 param runbookName = 'Sync-BitLockerComplianceGroups'
 
@@ -80,5 +81,5 @@ param tags = {
   solution: 'BitLockerGroupSync'
   managedBy: 'bicep'
   environment: 'prod'
-  version: '1.4.0'
+  version: '1.5.1'
 }

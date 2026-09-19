@@ -58,16 +58,24 @@
 .PARAMETER GrantGraphPermissions
     Assegna le permission Graph alla managed identity nello stesso flusso,
     richiedendo un login device-code con privilegi Entra. Supportato solo con
-    AuthenticationMode ManagedIdentity. Vengono assegnati soltanto gli app role
-    richiesti dai runbook selezionati e revocati gli altri app role gestiti dalla
-    soluzione.
+    AuthenticationMode ManagedIdentity. Per impostazione predefinita aggiunge
+    gli app role richiesti dai runbook selezionati senza revocare quelli esistenti.
+    Con FullReconcile revoca anche gli app role gestiti non piu necessari.
 
 .PARAMETER RunbookSelection
-    Seleziona i runbook da distribuire:
+    Seleziona i runbook da distribuire o aggiornare in modalita delta:
       - All: entrambi i runbook;
       - GroupSync: solo la riconciliazione dei gruppi;
       - ExtensionAttribute: solo la sincronizzazione extensionAttribute10.
-    Se omesso, mantiene la selezione dichiarata nel file .bicepparam.
+    I runbook non selezionati, le relative schedule e la configurazione runtime
+    esistente non vengono modificati. Se omesso, usa la selezione dichiarata nel
+    file .bicepparam.
+
+.PARAMETER FullReconcile
+    Applica la selezione come stato finale esclusivo. Rimuove gli artefatti
+    gestiti dei runbook non selezionati e, con GrantGraphPermissions, revoca gli
+    app role Graph gestiti non piu necessari. Usare solo per nuovi deployment o
+    riconciliazioni complete esplicitamente approvate.
 
 .PARAMETER PermissionsConfirmed
     Dichiara che le permission Microsoft Graph richieste sono state assegnate e
@@ -109,7 +117,7 @@
     configurata nel file .bicepparam.
 
 .NOTES
-    Version: 1.4.0
+    Version: 1.5.1
 
     Per visualizzare la guida completa:
         Get-Help .\deploy.ps1 -Full
@@ -130,6 +138,7 @@ param(
     [Parameter()][switch]$SkipProviderRegistration,
     [Parameter()][ValidateSet('All', 'GroupSync', 'ExtensionAttribute')]
     [string]$RunbookSelection,
+    [Parameter()][switch]$FullReconcile,
     [Parameter()][switch]$GrantGraphPermissions,
     [Parameter()][switch]$PermissionsConfirmed,
     [Parameter()][switch]$SkipWhatIf,
@@ -309,6 +318,49 @@ function Resolve-RunbookDeploymentSelection {
         DeployGroupSync          = $deployGroupSync
         DeployExtensionAttribute = $deployExtensionAttribute
     }
+}
+
+function Resolve-RunbookMonitoringSelection {
+    param(
+        [Parameter(Mandatory)][bool]$DeployGroupSync,
+        [Parameter(Mandatory)][bool]$DeployExtensionAttribute,
+        [Parameter(Mandatory)][bool]$FullReconcile,
+        [Parameter()][string[]]$ExistingRunbookName = @(),
+        [Parameter(Mandatory)][string]$GroupSyncRunbookName,
+        [Parameter(Mandatory)][string]$ExtensionAttributeRunbookName
+    )
+
+    [pscustomobject]@{
+        MonitorGroupSync = $DeployGroupSync -or (
+            -not $FullReconcile -and
+            $GroupSyncRunbookName -in $ExistingRunbookName
+        )
+        MonitorExtensionAttribute = $DeployExtensionAttribute -or (
+            -not $FullReconcile -and
+            $ExtensionAttributeRunbookName -in $ExistingRunbookName
+        )
+    }
+}
+
+function ConvertTo-UserAssignedIdentityMap {
+    param([Parameter()][AllowNull()][object]$UserAssignedIdentities)
+
+    $result = @{}
+    if ($null -eq $UserAssignedIdentities) {
+        return $result
+    }
+
+    if ($UserAssignedIdentities -is [System.Collections.IDictionary]) {
+        foreach ($resourceId in $UserAssignedIdentities.Keys) {
+            $result[[string]$resourceId] = @{}
+        }
+        return $result
+    }
+
+    foreach ($property in $UserAssignedIdentities.PSObject.Properties) {
+        $result[[string]$property.Name] = @{}
+    }
+    return $result
 }
 
 function Get-RequiredGraphAppRole {
@@ -762,6 +814,29 @@ function Remove-ExtensionAttributeWorkbookIfPresent {
     }
 }
 
+function Remove-GroupSyncWorkbookIfPresent {
+    param(
+        [Parameter(Mandatory)][string]$ResourceGroupName,
+        [Parameter(Mandatory)][string]$WorkspaceResourceId
+    )
+
+    $workbooks = @(
+        Get-AzResource `
+            -ResourceGroupName $ResourceGroupName `
+            -ResourceType 'Microsoft.Insights/workbooks' `
+            -ExpandProperties `
+            -ErrorAction Stop |
+            Where-Object {
+                $_.Properties.displayName -eq 'Nimbus.BitLockerGroupSync - Monitoring' -and
+                $_.Properties.sourceId -eq $WorkspaceResourceId
+            }
+    )
+    foreach ($workbook in $workbooks) {
+        Write-Warning "Rimozione workbook GroupSync non selezionato '$($workbook.Name)'."
+        Remove-AzResource -ResourceId $workbook.ResourceId -Force -ErrorAction Stop
+    }
+}
+
 function Resolve-AutomationAccountName {
     param(
         [Parameter(Mandatory)][string]$RequestedName,
@@ -889,6 +964,13 @@ $configuredAutomationAccountName = if ($parameterValues.automationAccountName) {
 else {
     'aa-bitlocker-groupsync'
 }
+$parameterAutomationAccountPublicNetworkAccess =
+    if ($null -ne $parameterValues.automationAccountPublicNetworkAccess) {
+        [bool]$parameterValues.automationAccountPublicNetworkAccess.value
+    }
+    else {
+        $true
+    }
 $configuredLogAnalyticsWorkspaceName = if ($parameterValues.logAnalyticsWorkspaceName) {
     [string]$parameterValues.logAnalyticsWorkspaceName.value
 }
@@ -920,6 +1002,11 @@ $selection = Resolve-RunbookDeploymentSelection `
     -ParameterDeployExtensionAttribute $parameterDeployExtensionAttribute
 $deployGroupSyncRunbook = $selection.DeployGroupSync
 $deployExtensionAttributeRunbook = $selection.DeployExtensionAttribute
+$deploymentMode = if ($FullReconcile) { 'FullReconcile' } else { 'Delta' }
+Write-Host "==> Modalita deployment: $deploymentMode" -ForegroundColor Cyan
+if ($FullReconcile) {
+    Write-Warning 'FullReconcile applichera la selezione come stato finale e rimuovera gli artefatti gestiti non selezionati.'
+}
 $configuredExtensionAttributeRunbookName = 'Sync-BitLockerExtensionAttribute'
 $configuredExtensionAttributeName = if ($null -ne $parameterValues.extensionAttributeName) {
     [string]$parameterValues.extensionAttributeName.value
@@ -976,7 +1063,7 @@ else {
     @{
         solution  = 'BitLockerGroupSync'
         managedBy = 'deploy.ps1'
-        version   = '1.4.0'
+        version   = '1.5.1'
     }
 }
 $configuredScheduleIntervalHours = if ($null -ne $parameterValues.scheduleIntervalHours) {
@@ -1101,6 +1188,62 @@ $existingAutomationAccount = Get-AzAutomationAccount `
     -ResourceGroupName $ResourceGroupName `
     -Name $configuredAutomationAccountName `
     -ErrorAction SilentlyContinue
+$preservedAutomationAccountUserAssignedIdentities = @{}
+$preserveAutomationAccountSystemAssignedIdentity = $false
+$effectiveAutomationAccountPublicNetworkAccess = $parameterAutomationAccountPublicNetworkAccess
+if ($existingAutomationAccount -and -not $FullReconcile) {
+    $existingAutomationAccountResource = Get-AzResource `
+        -ResourceGroupName $ResourceGroupName `
+        -ResourceType 'Microsoft.Automation/automationAccounts' `
+        -Name $configuredAutomationAccountName `
+        -ExpandProperties `
+        -ErrorAction Stop
+    $existingIdentity = $existingAutomationAccountResource.Identity
+    $preservedAutomationAccountUserAssignedIdentities =
+        ConvertTo-UserAssignedIdentityMap `
+            -UserAssignedIdentities $existingIdentity.UserAssignedIdentities
+    $preserveAutomationAccountSystemAssignedIdentity =
+        [string]$existingIdentity.Type -match 'SystemAssigned'
+    $existingPublicNetworkAccess =
+        [string]$existingAutomationAccountResource.Properties.publicNetworkAccess
+    if ([string]::IsNullOrWhiteSpace($existingPublicNetworkAccess)) {
+        throw "Impossibile determinare publicNetworkAccess dell'Automation Account esistente '$configuredAutomationAccountName'."
+    }
+    $effectiveAutomationAccountPublicNetworkAccess =
+        $existingPublicNetworkAccess -ne 'Disabled'
+}
+$existingRunbookNames = if ($existingAutomationAccount) {
+    @(
+        Get-AzAutomationRunbook `
+            -ResourceGroupName $ResourceGroupName `
+            -AutomationAccountName $configuredAutomationAccountName `
+            -ErrorAction Stop |
+        ForEach-Object Name
+    )
+}
+else {
+    @()
+}
+$monitoringSelection = Resolve-RunbookMonitoringSelection `
+    -DeployGroupSync $deployGroupSyncRunbook `
+    -DeployExtensionAttribute $deployExtensionAttributeRunbook `
+    -FullReconcile $FullReconcile `
+    -ExistingRunbookName $existingRunbookNames `
+    -GroupSyncRunbookName $configuredRunbookName `
+    -ExtensionAttributeRunbookName $configuredExtensionAttributeRunbookName
+$monitorGroupSyncRunbook = $monitoringSelection.MonitorGroupSync
+$monitorExtensionAttributeRunbook = $monitoringSelection.MonitorExtensionAttribute
+$existingGraphAuthenticationModule = if ($existingAutomationAccount) {
+    Get-AzResource `
+        -ResourceGroupName $ResourceGroupName `
+        -ResourceType 'Microsoft.Automation/automationAccounts/powerShell72Modules' `
+        -Name "$configuredAutomationAccountName/Microsoft.Graph.Authentication" `
+        -ErrorAction SilentlyContinue
+}
+else {
+    $null
+}
+$deployGraphAuthenticationModule = $FullReconcile -or -not $existingGraphAuthenticationModule
 $extensionMappingRequiresInitialization = $false
 if ($deployExtensionAttributeRunbook) {
     $existingMappingVariables = if ($existingAutomationAccount) {
@@ -1148,8 +1291,14 @@ $templateParams = @{
     TemplateParameterFile = $resolvedParameterFile
     location              = $Location
     automationAccountName = $configuredAutomationAccountName
+    automationAccountPublicNetworkAccess = $effectiveAutomationAccountPublicNetworkAccess
+    preservedAutomationAccountUserAssignedIdentities = $preservedAutomationAccountUserAssignedIdentities
+    preserveAutomationAccountSystemAssignedIdentity = $preserveAutomationAccountSystemAssignedIdentity
+    deployGraphAuthenticationModule = $deployGraphAuthenticationModule
     deployGroupSyncRunbook = $deployGroupSyncRunbook
     deployExtensionAttributeRunbook = $deployExtensionAttributeRunbook
+    monitorGroupSyncRunbook = $monitorGroupSyncRunbook
+    monitorExtensionAttributeRunbook = $monitorExtensionAttributeRunbook
     enableSchedule        = $runtimeEnabled
     enableDeadmanAlert    = $runtimeEnabled
 }
@@ -1179,14 +1328,18 @@ else {
     @()
 }
 if ($requiresStagedActivation -or -not $PermissionsConfirmed) {
-    $disabledWebhooks += @(Disable-RunbookWebhook `
-            -ResourceGroupName $ResourceGroupName `
-            -AutomationAccountName $configuredAutomationAccountName `
-            -RunbookName $configuredRunbookName)
-    $disabledWebhooks += @(Disable-RunbookWebhook `
-            -ResourceGroupName $ResourceGroupName `
-            -AutomationAccountName $configuredAutomationAccountName `
-            -RunbookName $configuredExtensionAttributeRunbookName)
+    if ($deployGroupSyncRunbook) {
+        $disabledWebhooks += @(Disable-RunbookWebhook `
+                -ResourceGroupName $ResourceGroupName `
+                -AutomationAccountName $configuredAutomationAccountName `
+                -RunbookName $configuredRunbookName)
+    }
+    if ($deployExtensionAttributeRunbook) {
+        $disabledWebhooks += @(Disable-RunbookWebhook `
+                -ResourceGroupName $ResourceGroupName `
+                -AutomationAccountName $configuredAutomationAccountName `
+                -RunbookName $configuredExtensionAttributeRunbookName)
+    }
     if ($disabledWebhooks.Count -gt 0) {
         Save-DeploymentDisabledWebhook `
             -ResourceGroupName $ResourceGroupName `
@@ -1194,37 +1347,19 @@ if ($requiresStagedActivation -or -not $PermissionsConfirmed) {
             -Webhook $disabledWebhooks
     }
 }
-if ($requiresStagedActivation) {
-    if ($deployGroupSyncRunbook) {
-        Remove-ExistingJobScheduleLink `
-            -ResourceGroupName $ResourceGroupName `
-            -AutomationAccountName $configuredAutomationAccountName `
-            -RunbookName $configuredRunbookName `
-            -ScheduleName $configuredScheduleName
-    }
-    if ($deployExtensionAttributeRunbook) {
-        Remove-ExistingJobScheduleLink `
-            -ResourceGroupName $ResourceGroupName `
-            -AutomationAccountName $configuredAutomationAccountName `
-            -RunbookName $configuredExtensionAttributeRunbookName `
-            -ScheduleName $configuredExtensionAttributeScheduleName
-    }
+if ($deployGroupSyncRunbook) {
+    Remove-ExistingJobScheduleLink `
+        -ResourceGroupName $ResourceGroupName `
+        -AutomationAccountName $configuredAutomationAccountName `
+        -RunbookName $configuredRunbookName `
+        -ScheduleName $configuredScheduleName
 }
-else {
-    if ($deployGroupSyncRunbook) {
-        Remove-ExistingJobScheduleLink `
-            -ResourceGroupName $ResourceGroupName `
-            -AutomationAccountName $configuredAutomationAccountName `
-            -RunbookName $configuredRunbookName `
-            -ScheduleName $configuredScheduleName
-    }
-    if ($deployExtensionAttributeRunbook) {
-        Remove-ExistingJobScheduleLink `
-            -ResourceGroupName $ResourceGroupName `
-            -AutomationAccountName $configuredAutomationAccountName `
-            -RunbookName $configuredExtensionAttributeRunbookName `
-            -ScheduleName $configuredExtensionAttributeScheduleName
-    }
+if ($deployExtensionAttributeRunbook) {
+    Remove-ExistingJobScheduleLink `
+        -ResourceGroupName $ResourceGroupName `
+        -AutomationAccountName $configuredAutomationAccountName `
+        -RunbookName $configuredExtensionAttributeRunbookName `
+        -ScheduleName $configuredExtensionAttributeScheduleName
 }
 
 Write-Host '==> Deploy Bicep...' -ForegroundColor Cyan
@@ -1330,16 +1465,24 @@ if ($GrantGraphPermissions) {
     $graphAppRolesBase64 = [Convert]::ToBase64String(
         [Text.Encoding]::UTF8.GetBytes($graphAppRolesJson)
     )
-    & pwsh `
-        -NoProfile `
-        -File "$PSScriptRoot\scripts\Grant-GraphPermissions.ps1" `
-        -ManagedIdentityPrincipalId $graphPermissionPrincipalId `
-        -GraphAppRolesBase64 $graphAppRolesBase64 `
-        -Reconcile `
-        -TenantId $context.Tenant.Id `
-        -UseDeviceCode
+    $graphPermissionArguments = @(
+        '-NoProfile'
+        '-File'
+        "$PSScriptRoot\scripts\Grant-GraphPermissions.ps1"
+        '-ManagedIdentityPrincipalId'
+        $graphPermissionPrincipalId
+        '-GraphAppRolesBase64'
+        $graphAppRolesBase64
+        '-TenantId'
+        [string]$context.Tenant.Id
+        '-UseDeviceCode'
+    )
+    if ($FullReconcile) {
+        $graphPermissionArguments += '-Reconcile'
+    }
+    & pwsh @graphPermissionArguments
     if ($LASTEXITCODE -ne 0) {
-        throw "Riconciliazione dei permessi Graph fallita (exit code $LASTEXITCODE)."
+        throw "Aggiornamento dei permessi Graph fallito (exit code $LASTEXITCODE)."
     }
 
 }
@@ -1348,9 +1491,10 @@ elseif (-not $PermissionsConfirmed) {
 }
 else {
     Write-Host "==> Permission Entra dichiarate come confermate dall'operatore." -ForegroundColor Green
-    if ($AuthenticationMode -eq 'ManagedIdentity' -and
+    if ($FullReconcile -and
+        $AuthenticationMode -eq 'ManagedIdentity' -and
         -not ($deployGroupSyncRunbook -and $deployExtensionAttributeRunbook)) {
-        Write-Warning 'RunbookSelection e stata ridotta senza -GrantGraphPermissions: verificare e revocare manualmente gli app role Graph non piu necessari.'
+        Write-Warning 'FullReconcile senza -GrantGraphPermissions non revoca gli app role Graph non piu necessari: verificarli manualmente.'
     }
 }
 
@@ -1404,31 +1548,48 @@ if ($runtimeEnabled -and $disabledWebhooks.Count -gt 0) {
     }
 }
 
-if (-not $deployGroupSyncRunbook) {
-    Remove-DeselectedRunbookArtifact `
-        -ResourceGroupName $ResourceGroupName `
-        -AutomationAccountName $aaName `
-        -RunbookName $configuredRunbookName `
-        -RuntimeVariableName 'BitLockerSyncRuntimeConfig'
-}
-if (-not $deployExtensionAttributeRunbook) {
-    Remove-DeselectedRunbookArtifact `
-        -ResourceGroupName $ResourceGroupName `
-        -AutomationAccountName $aaName `
-        -RunbookName $configuredExtensionAttributeRunbookName `
-        -RuntimeVariableName 'BitLockerExtensionAttributeRuntimeConfig'
-}
-if (-not ($deployExtensionAttributeRunbook -and $deployLogAnalytics -and $deployMonitoring -and $deployWorkbook)) {
+if ($FullReconcile) {
     $configuredWorkspaceResourceId = "/subscriptions/$($context.Subscription.Id)/resourceGroups/$ResourceGroupName/providers/Microsoft.OperationalInsights/workspaces/$configuredLogAnalyticsWorkspaceName"
-    Remove-ExtensionAttributeWorkbookIfPresent `
-        -ResourceGroupName $ResourceGroupName `
-        -WorkspaceResourceId $configuredWorkspaceResourceId
-}
-if (-not ($deployGroupSyncRunbook -and $deployExtensionAttributeRunbook)) {
-    Remove-ResourceIfPresent `
-        -ResourceGroupName $ResourceGroupName `
-        -ResourceType 'Microsoft.Insights/scheduledQueryRules' `
-        -Name 'alert-blkgm-extension-no-success'
+    if (-not $deployGroupSyncRunbook) {
+        Remove-DeselectedRunbookArtifact `
+            -ResourceGroupName $ResourceGroupName `
+            -AutomationAccountName $aaName `
+            -RunbookName $configuredRunbookName `
+            -RuntimeVariableName @(
+                'BitLockerSyncRuntimeConfig'
+                'BitLockerSyncAlertWebhook'
+                'BitLockerSyncNotifyWebhook'
+            )
+    }
+    if (-not $deployExtensionAttributeRunbook) {
+        Remove-DeselectedRunbookArtifact `
+            -ResourceGroupName $ResourceGroupName `
+            -AutomationAccountName $aaName `
+            -RunbookName $configuredExtensionAttributeRunbookName `
+            -RuntimeVariableName 'BitLockerExtensionAttributeRuntimeConfig'
+    }
+    if (-not ($deployExtensionAttributeRunbook -and $deployLogAnalytics -and $deployMonitoring -and $deployWorkbook)) {
+        Remove-ExtensionAttributeWorkbookIfPresent `
+            -ResourceGroupName $ResourceGroupName `
+            -WorkspaceResourceId $configuredWorkspaceResourceId
+    }
+    if (-not ($deployGroupSyncRunbook -and $deployLogAnalytics -and $deployMonitoring -and $deployWorkbook)) {
+        Remove-GroupSyncWorkbookIfPresent `
+            -ResourceGroupName $ResourceGroupName `
+            -WorkspaceResourceId $configuredWorkspaceResourceId
+    }
+    if (-not $deployGroupSyncRunbook) {
+        Remove-ResourceIfPresent `
+            -ResourceGroupName $ResourceGroupName `
+            -ResourceType 'Microsoft.Insights/scheduledQueryRules' `
+            -Name 'alert-blkgm-no-successful-run'
+    }
+    if (-not $deployExtensionAttributeRunbook) {
+        Remove-ResourceIfPresent `
+            -ResourceGroupName $ResourceGroupName `
+            -ResourceType 'Microsoft.Insights/scheduledQueryRules' `
+            -Name 'alert-blkgm-extension-no-success'
+    }
 }
 
 if ($CreateTriggerWebhook) {

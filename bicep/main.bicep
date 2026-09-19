@@ -12,6 +12,15 @@ param location string = resourceGroup().location
 @description('Nome dell\'Automation Account.')
 param automationAccountName string = 'aa-bitlocker-groupsync'
 
+@description('Abilita l\'accesso pubblico all\'Automation Account. In deploy delta deploy.ps1 preserva il valore esistente.')
+param automationAccountPublicNetworkAccess bool = true
+
+@description('User Assigned Managed Identity esistenti da preservare durante un deployment delta.')
+param preservedAutomationAccountUserAssignedIdentities object = {}
+
+@description('Preserva la System Assigned Managed Identity esistente durante un deployment delta.')
+param preserveAutomationAccountSystemAssignedIdentity bool = false
+
 @description('Nome del workspace Log Analytics. Separato dall\'Automation Account per consentire rename controllati.')
 param logAnalyticsWorkspaceName string = '${automationAccountName}-law'
 
@@ -24,11 +33,20 @@ param runbookContentUri string
 @description('Se true Azure Automation pubblica i runbook dai content link. Impostare false per repository privati e usare deploy.ps1 per importarli dai file locali.')
 param deployRunbookContentLinks bool = true
 
+@description('Se true crea o aggiorna il modulo Microsoft.Graph.Authentication per PowerShell 7.2.')
+param deployGraphAuthenticationModule bool = true
+
 @description('Se true distribuisce il runbook di sincronizzazione dei gruppi Entra.')
 param deployGroupSyncRunbook bool = true
 
 @description('Se true distribuisce il runbook che sincronizza lo stato BitLocker in un extension attribute Entra.')
 param deployExtensionAttributeRunbook bool = false
+
+@description('Se true include GroupSync nelle risorse di monitoraggio condivise.')
+param monitorGroupSyncRunbook bool = deployGroupSyncRunbook
+
+@description('Se true include ExtensionAttribute nelle risorse di monitoraggio condivise e dedicate.')
+param monitorExtensionAttributeRunbook bool = deployExtensionAttributeRunbook
 
 @description('URL raw (pubblico) del runbook di sincronizzazione extension attribute.')
 param extensionAttributeRunbookContentUri string = 'https://raw.githubusercontent.com/robgrame/Nimbus.BitLockerGroupSync/main/runbook/Sync-BitLockerExtensionAttribute.ps1'
@@ -210,15 +228,24 @@ param notificationDetailLimit int = 50
 param tags object = {
   solution: 'BitLockerGroupSync'
   managedBy: 'bicep'
-  version: '1.4.0'
+  version: '1.5.1'
 }
 
 var graphAuthModuleUri = 'https://www.powershellgallery.com/api/v2/package/Microsoft.Graph.Authentication'
 var scheduleName = '${runbookName}-every${scheduleIntervalHours}h'
 var extensionAttributeRunbookName = 'Sync-BitLockerExtensionAttribute'
 var extensionAttributeScheduleName = '${extensionAttributeRunbookName}-every${extensionAttributeScheduleIntervalHours}h'
-var monitoringPrimaryRunbookName = deployGroupSyncRunbook ? runbookName : extensionAttributeRunbookName
-var monitoringSecondaryRunbookName = deployGroupSyncRunbook && deployExtensionAttributeRunbook ? extensionAttributeRunbookName : ''
+var requestedRuntimeUserAssignedIdentities = authenticationMode == 'ManagedIdentity' ? {
+  '${runtimeIdentity!.id}': {}
+} : {}
+var effectiveAutomationAccountUserAssignedIdentities = union(
+  preservedAutomationAccountUserAssignedIdentities,
+  requestedRuntimeUserAssignedIdentities
+)
+var hasAutomationAccountUserAssignedIdentities = !empty(effectiveAutomationAccountUserAssignedIdentities)
+var automationAccountIdentityType = preserveAutomationAccountSystemAssignedIdentity
+  ? (hasAutomationAccountUserAssignedIdentities ? 'SystemAssigned, UserAssigned' : 'SystemAssigned')
+  : (hasAutomationAccountUserAssignedIdentities ? 'UserAssigned' : '')
 var runbookParameters = {
   AuthenticationMode: authenticationMode
   ManagedIdentityClientId: authenticationMode == 'ManagedIdentity' ? runtimeIdentity!.properties.clientId : ''
@@ -263,24 +290,23 @@ resource automationAccount 'Microsoft.Automation/automationAccounts@2023-11-01' 
   name: automationAccountName
   location: location
   tags: tags
-  // Il provider Automation interpreta identity.type=None come rimozione di
-  // un'identita e fallisce se l'account non esiste ancora. In modalita App
-  // Registration la proprieta identity deve quindi essere omessa del tutto.
-  identity: authenticationMode == 'ManagedIdentity' ? {
-    type: 'UserAssigned'
-    userAssignedIdentities: {
-      '${runtimeIdentity!.id}': {}
-    }
-  } : null
+  identity: empty(automationAccountIdentityType) ? null : union(
+    {
+      type: automationAccountIdentityType
+    },
+    hasAutomationAccountUserAssignedIdentities ? {
+      userAssignedIdentities: effectiveAutomationAccountUserAssignedIdentities
+    } : {}
+  )
   properties: {
     sku: {
       name: 'Basic'
     }
-    publicNetworkAccess: true
+    publicNetworkAccess: automationAccountPublicNetworkAccess
   }
 }
 
-resource graphAuthModule 'Microsoft.Automation/automationAccounts/powerShell72Modules@2023-11-01' = {
+resource graphAuthModule 'Microsoft.Automation/automationAccounts/powerShell72Modules@2023-11-01' = if (deployGraphAuthenticationModule) {
   parent: automationAccount
   name: 'Microsoft.Graph.Authentication'
   properties: {
@@ -403,7 +429,7 @@ resource alertWebhookVar 'Microsoft.Automation/automationAccounts/variables@2023
   }
 }
 
-resource notifyWebhookVar 'Microsoft.Automation/automationAccounts/variables@2023-11-01' = if (deployTeamsLogicApp || !empty(notifyWebhookUrl)) {
+resource notifyWebhookVar 'Microsoft.Automation/automationAccounts/variables@2023-11-01' = if (deployGroupSyncRunbook && (deployTeamsLogicApp || !empty(notifyWebhookUrl))) {
   parent: automationAccount
   name: 'BitLockerSyncNotifyWebhook'
   properties: {
@@ -486,14 +512,15 @@ module teamsLogicApp 'teams-logicapp.bicep' = if (deployTeamsLogicApp) {
 }
 
 // Monitoraggio nativo senza Logic App Teams.
-module monitoring 'monitoring.bicep' = if (deployMonitoring && deployLogAnalytics && !deployTeamsLogicApp && (deployGroupSyncRunbook || deployExtensionAttributeRunbook)) {
+module monitoring 'monitoring.bicep' = if (deployMonitoring && deployLogAnalytics && !deployTeamsLogicApp && (monitorGroupSyncRunbook || monitorExtensionAttributeRunbook)) {
   name: 'blkgm-monitoring'
   params: {
     location: location
     logAnalyticsWorkspaceId: logAnalytics.id
-    runbookName: monitoringPrimaryRunbookName
-    extensionAttributeRunbookName: monitoringSecondaryRunbookName
-    extensionAttributeWorkbookRunbookName: deployExtensionAttributeRunbook ? extensionAttributeRunbookName : ''
+    runbookName: runbookName
+    extensionAttributeRunbookName: extensionAttributeRunbookName
+    monitorGroupSyncRunbook: monitorGroupSyncRunbook
+    monitorExtensionAttributeRunbook: monitorExtensionAttributeRunbook
     extensionAttributeName: extensionAttributeName
     alertEmails: alertEmails
     alertActionWebhookUrl: alertActionWebhookUrl
@@ -510,14 +537,15 @@ module monitoring 'monitoring.bicep' = if (deployMonitoring && deployLogAnalytic
 }
 
 // Monitoraggio nativo con callback protetto della Logic App Teams.
-module monitoringWithTeams 'monitoring.bicep' = if (deployMonitoring && deployLogAnalytics && deployTeamsLogicApp && (deployGroupSyncRunbook || deployExtensionAttributeRunbook)) {
+module monitoringWithTeams 'monitoring.bicep' = if (deployMonitoring && deployLogAnalytics && deployTeamsLogicApp && (monitorGroupSyncRunbook || monitorExtensionAttributeRunbook)) {
   name: 'blkgm-monitoring'
   params: {
     location: location
     logAnalyticsWorkspaceId: logAnalytics.id
-    runbookName: monitoringPrimaryRunbookName
-    extensionAttributeRunbookName: monitoringSecondaryRunbookName
-    extensionAttributeWorkbookRunbookName: deployExtensionAttributeRunbook ? extensionAttributeRunbookName : ''
+    runbookName: runbookName
+    extensionAttributeRunbookName: extensionAttributeRunbookName
+    monitorGroupSyncRunbook: monitorGroupSyncRunbook
+    monitorExtensionAttributeRunbook: monitorExtensionAttributeRunbook
     extensionAttributeName: extensionAttributeName
     alertEmails: alertEmails
     // Le condizioni dei due moduli sono allineate: la Logic App esiste sempre in questo ramo.

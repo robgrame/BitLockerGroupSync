@@ -79,7 +79,8 @@ Describe 'Modulo monitoring.bicep' {
     }
     It 'Include il runbook extension attribute negli alert e nel dead-man dedicato' {
         $script:text | Should -Match 'param extensionAttributeRunbookName string'
-        $script:text | Should -Match 'RunbookName_s in \("\$\{runbookName\}", "\$\{extensionAttributeRunbookName\}"\)'
+        $script:text | Should -Match 'RunbookName_s in \("\{0\}", "\{1\}"\)'
+        $script:text | Should -Match 'monitoredGroupSyncRunbookName, monitoredExtensionAttributeRunbookName'
         $script:text | Should -Match 'alert-blkgm-extension-no-success'
     }
     It 'Il dead-man''s switch usa metricMeasureColumn Completed con LessThan 1' {
@@ -101,12 +102,13 @@ Describe 'Modulo monitoring.bicep' {
         $script:text | Should -Match "replace\(loadTextContent\('workbooks/runbook-monitoring.workbook.json'\), '__RUNBOOK_NAME__', runbookName\)"
     }
     It 'Crea una nuova versione separata del workbook extension attribute' {
-        $script:text | Should -Match "param extensionAttributeWorkbookRunbookName string"
+        $script:text | Should -Match "param monitorExtensionAttributeRunbook bool"
         $script:text | Should -Match "blkgm-extension-attribute-monitoring-v2"
         $script:text | Should -Match "extension-attribute-monitoring-v2\.workbook\.json"
         $script:text | Should -Match "BitLocker Extension Attribute - Operations Overview v2"
         $script:text | Should -Match "version: '2\.0'"
         $script:text | Should -Match "__EXTENSION_ATTRIBUTE_NAME__"
+        $script:text | Should -Match "deployWorkbook && monitorExtensionAttributeRunbook"
     }
     It 'Le email ricevitori usano il common alert schema' {
         $script:text | Should -Match 'useCommonAlertSchema: true'
@@ -180,6 +182,9 @@ Describe 'Wiring in main.bicep' {
 
     It 'Espone il parametro <Name>' -ForEach @(
         @{ Name = 'deployMonitoring' }
+        @{ Name = 'automationAccountPublicNetworkAccess' }
+        @{ Name = 'preservedAutomationAccountUserAssignedIdentities' }
+        @{ Name = 'preserveAutomationAccountSystemAssignedIdentity' }
         @{ Name = 'logAnalyticsWorkspaceName' }
         @{ Name = 'alertEmails' }
         @{ Name = 'enableFailedAlert' }
@@ -218,11 +223,12 @@ Describe 'Wiring in main.bicep' {
         $script:text | Should -Match 'EnableKeyEscrowCheck: string\(enableKeyEscrowCheck\)'
     }
     It 'Invoca il monitoraggio solo quando Log Analytics e attivo' {
-        $script:text | Should -Match "module monitoring 'monitoring.bicep' = if \(deployMonitoring && deployLogAnalytics && !deployTeamsLogicApp && \(deployGroupSyncRunbook \|\| deployExtensionAttributeRunbook\)\)"
-        $script:text | Should -Match "module monitoringWithTeams 'monitoring.bicep' = if \(deployMonitoring && deployLogAnalytics && deployTeamsLogicApp && \(deployGroupSyncRunbook \|\| deployExtensionAttributeRunbook\)\)"
+        $script:text | Should -Match "module monitoring 'monitoring.bicep' = if \(deployMonitoring && deployLogAnalytics && !deployTeamsLogicApp && \(monitorGroupSyncRunbook \|\| monitorExtensionAttributeRunbook\)\)"
+        $script:text | Should -Match "module monitoringWithTeams 'monitoring.bicep' = if \(deployMonitoring && deployLogAnalytics && deployTeamsLogicApp && \(monitorGroupSyncRunbook \|\| monitorExtensionAttributeRunbook\)\)"
     }
     It 'Passa il runbook extension attribute al workbook dedicato' {
-        ([regex]::Matches($script:text, 'extensionAttributeWorkbookRunbookName: deployExtensionAttributeRunbook \? extensionAttributeRunbookName : ''''')).Count | Should -Be 2
+        ([regex]::Matches($script:text, 'extensionAttributeRunbookName: extensionAttributeRunbookName')).Count | Should -Be 2
+        ([regex]::Matches($script:text, 'monitorExtensionAttributeRunbook: monitorExtensionAttributeRunbook')).Count | Should -Be 2
     }
     It 'Espone il resource id del workbook dedicato' {
         $script:text | Should -Match 'output extensionAttributeWorkbookId string'
@@ -244,6 +250,7 @@ Describe 'Wiring in main.bicep' {
     }
     It 'Collega automaticamente il callback della Logic App al notify webhook cifrato' {
         $script:text | Should -Match "name: 'BitLockerSyncNotifyWebhook'"
+        $script:text | Should -Match 'deployGroupSyncRunbook && \(deployTeamsLogicApp \|\| !empty\(notifyWebhookUrl\)\)'
         $script:text | Should -Match 'deployTeamsLogicApp \? .*teamsLogicApp\.outputs\.triggerUrl'
         $script:text | Should -Match 'NotificationDetailLimit: string\(notificationDetailLimit\)'
     }
@@ -251,17 +258,17 @@ Describe 'Wiring in main.bicep' {
         $script:text | Should -Match "resource schedule .* = if \(enableSchedule && deployGroupSyncRunbook\)"
         $script:text | Should -Match "resource jobSchedule .* = if \(enableSchedule && deployGroupSyncRunbook\)"
     }
-    It 'Crea e collega una UAMI dedicata all Automation Account' {
+    It 'Crea la UAMI dedicata e preserva le identita esistenti richieste' {
         $script:text | Should -Match "Microsoft\.ManagedIdentity/userAssignedIdentities@2024-11-30"
-        $script:text | Should -Match "type: 'UserAssigned'"
-        $script:text | Should -Match 'userAssignedIdentities:'
+        $script:text | Should -Match 'effectiveAutomationAccountUserAssignedIdentities = union'
+        $script:text | Should -Match "SystemAssigned, UserAssigned"
+        $script:text | Should -Match 'userAssignedIdentities: effectiveAutomationAccountUserAssignedIdentities'
         $script:text | Should -Match 'runtimeIdentity!\.properties\.clientId'
-        $script:text | Should -Not -Match "'SystemAssigned, UserAssigned'"
     }
-    It 'Omette identity dall Automation Account quando usa App Registration' {
-        $script:text | Should -Match "identity: authenticationMode == 'ManagedIdentity' \? \{"
-        $script:text | Should -Match '\}\s*:\s*null'
+    It 'Omette identity solo quando non esistono identita da configurare' {
+        $script:text | Should -Match 'identity: empty\(automationAccountIdentityType\) \? null : union\('
         $script:text | Should -Not -Match "type: 'None'"
+        $script:text | Should -Match 'publicNetworkAccess: automationAccountPublicNetworkAccess'
     }
     It 'Passa solo riferimenti non segreti alla schedule' {
         $script:text | Should -Match 'AuthenticationMode: authenticationMode'
@@ -317,7 +324,8 @@ Describe 'Wiring in main.bicep' {
         $script:text | Should -Match 'param deployGroupSyncRunbook bool = true'
         $script:text | Should -Match "resource runbook .* = if \(deployGroupSyncRunbook && deployRunbookContentLinks\)"
         $script:text | Should -Match "resource runtimeConfigVar .* = if \(deployGroupSyncRunbook\)"
-        $script:text | Should -Match 'monitoringPrimaryRunbookName = deployGroupSyncRunbook \? runbookName : extensionAttributeRunbookName'
+        $script:text | Should -Match 'param monitorGroupSyncRunbook bool = deployGroupSyncRunbook'
+        $script:text | Should -Match 'monitorGroupSyncRunbook: monitorGroupSyncRunbook'
     }
 }
 

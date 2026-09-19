@@ -21,8 +21,11 @@ param runbookName string
 @description('Secondo runbook opzionale da includere negli alert.')
 param extensionAttributeRunbookName string = ''
 
-@description('Runbook extension attribute da visualizzare nel workbook dedicato.')
-param extensionAttributeWorkbookRunbookName string = ''
+@description('Se true include il runbook GroupSync nel monitoraggio.')
+param monitorGroupSyncRunbook bool = true
+
+@description('Se true include il runbook ExtensionAttribute nel monitoraggio.')
+param monitorExtensionAttributeRunbook bool = false
 
 @description('Nome dell\'extension attribute visualizzato nel workbook dedicato.')
 param extensionAttributeName string = 'extensionAttribute10'
@@ -66,6 +69,9 @@ param actionGroupShortName string = 'BLKGMSync'
 @description('Tag applicati alle risorse.')
 param tags object = {}
 
+var monitoredGroupSyncRunbookName = monitorGroupSyncRunbook ? runbookName : ''
+var monitoredExtensionAttributeRunbookName = monitorExtensionAttributeRunbook ? extensionAttributeRunbookName : ''
+
 // ---------------------------------------------------------------------------
 //  Action Group: destinazione centralizzata delle notifiche.
 // ---------------------------------------------------------------------------
@@ -96,7 +102,7 @@ resource actionGroup 'Microsoft.Insights/actionGroups@2023-01-01' = {
 // ---------------------------------------------------------------------------
 //  Alert 1: job Failed / Suspended / Stopped (fallimenti infrastrutturali).
 // ---------------------------------------------------------------------------
-resource failedAlert 'Microsoft.Insights/scheduledQueryRules@2023-03-15-preview' = if (enableFailedAlert) {
+resource failedAlert 'Microsoft.Insights/scheduledQueryRules@2023-03-15-preview' = if (enableFailedAlert && (monitorGroupSyncRunbook || monitorExtensionAttributeRunbook)) {
   name: 'alert-blkgm-job-failed'
   location: location
   tags: tags
@@ -112,13 +118,13 @@ resource failedAlert 'Microsoft.Insights/scheduledQueryRules@2023-03-15-preview'
     criteria: {
       allOf: [
         {
-          query: '''
+          query: format('''
 AzureDiagnostics
 | where ResourceProvider == "MICROSOFT.AUTOMATION"
 | where Category == "JobLogs"
-| where RunbookName_s in ("${runbookName}", "${extensionAttributeRunbookName}")
+| where RunbookName_s in ("{0}", "{1}")
 | where ResultType in ("Failed", "Suspended", "Stopped")
-'''
+''', monitoredGroupSyncRunbookName, monitoredExtensionAttributeRunbookName)
           timeAggregation: 'Count'
           operator: 'GreaterThan'
           threshold: 0
@@ -139,7 +145,7 @@ AzureDiagnostics
 // ---------------------------------------------------------------------------
 //  Alert 2: errori nello stream del runbook (errori applicativi/riconciliazione).
 // ---------------------------------------------------------------------------
-resource errorAlert 'Microsoft.Insights/scheduledQueryRules@2023-03-15-preview' = if (enableErrorAlert) {
+resource errorAlert 'Microsoft.Insights/scheduledQueryRules@2023-03-15-preview' = if (enableErrorAlert && (monitorGroupSyncRunbook || monitorExtensionAttributeRunbook)) {
   name: 'alert-blkgm-runbook-error'
   location: location
   tags: tags
@@ -155,13 +161,13 @@ resource errorAlert 'Microsoft.Insights/scheduledQueryRules@2023-03-15-preview' 
     criteria: {
       allOf: [
         {
-          query: '''
+          query: format('''
 AzureDiagnostics
 | where ResourceProvider == "MICROSOFT.AUTOMATION"
 | where Category == "JobStreams"
-| where RunbookName_s in ("${runbookName}", "${extensionAttributeRunbookName}")
+| where RunbookName_s in ("{0}", "{1}")
 | where StreamType_s == "Error" or ResultDescription contains "[ERROR]"
-'''
+''', monitoredGroupSyncRunbookName, monitoredExtensionAttributeRunbookName)
           timeAggregation: 'Count'
           operator: 'GreaterThan'
           threshold: 0
@@ -193,7 +199,7 @@ AzureDiagnostics
 //  (latenza di ingestion dei JobLogs) che si auto-risolve: e' un comportamento
 //  noto di Azure Monitor, non un problema del runbook.
 // ---------------------------------------------------------------------------
-resource deadmanAlert 'Microsoft.Insights/scheduledQueryRules@2023-03-15-preview' = if (enableDeadmanAlert) {
+resource deadmanAlert 'Microsoft.Insights/scheduledQueryRules@2023-03-15-preview' = if (enableDeadmanAlert && monitorGroupSyncRunbook) {
   name: 'alert-blkgm-no-successful-run'
   location: location
   tags: tags
@@ -209,14 +215,14 @@ resource deadmanAlert 'Microsoft.Insights/scheduledQueryRules@2023-03-15-preview
     criteria: {
       allOf: [
         {
-          query: '''
+          query: format('''
 AzureDiagnostics
 | where ResourceProvider == "MICROSOFT.AUTOMATION"
 | where Category == "JobLogs"
-| where RunbookName_s == "${runbookName}"
+| where RunbookName_s == "{0}"
 | where ResultType == "Completed"
 | summarize Completed = count()
-'''
+''', runbookName)
           timeAggregation: 'Total'
           metricMeasureColumn: 'Completed'
           operator: 'LessThan'
@@ -235,7 +241,7 @@ AzureDiagnostics
   }
 }
 
-resource extensionAttributeDeadmanAlert 'Microsoft.Insights/scheduledQueryRules@2023-03-15-preview' = if (enableDeadmanAlert && !empty(extensionAttributeRunbookName)) {
+resource extensionAttributeDeadmanAlert 'Microsoft.Insights/scheduledQueryRules@2023-03-15-preview' = if (enableDeadmanAlert && monitorExtensionAttributeRunbook) {
   name: 'alert-blkgm-extension-no-success'
   location: location
   tags: tags
@@ -251,14 +257,14 @@ resource extensionAttributeDeadmanAlert 'Microsoft.Insights/scheduledQueryRules@
     criteria: {
       allOf: [
         {
-          query: '''
+          query: format('''
 AzureDiagnostics
 | where ResourceProvider == "MICROSOFT.AUTOMATION"
 | where Category == "JobLogs"
-| where RunbookName_s == "${extensionAttributeRunbookName}"
+| where RunbookName_s == "{0}"
 | where ResultType == "Completed"
 | summarize Completed = count()
-'''
+''', extensionAttributeRunbookName)
           timeAggregation: 'Total'
           metricMeasureColumn: 'Completed'
           operator: 'LessThan'
@@ -280,7 +286,7 @@ AzureDiagnostics
 // ---------------------------------------------------------------------------
 //  Workbook: dashboard attività runbook.
 // ---------------------------------------------------------------------------
-resource workbook 'Microsoft.Insights/workbooks@2023-06-01' = if (deployWorkbook) {
+resource workbook 'Microsoft.Insights/workbooks@2023-06-01' = if (deployWorkbook && monitorGroupSyncRunbook) {
   name: guid(logAnalyticsWorkspaceId, 'blkgm-monitoring-workbook')
   location: location
   tags: tags
@@ -294,7 +300,7 @@ resource workbook 'Microsoft.Insights/workbooks@2023-06-01' = if (deployWorkbook
   }
 }
 
-resource extensionAttributeWorkbook 'Microsoft.Insights/workbooks@2023-06-01' = if (deployWorkbook && !empty(extensionAttributeWorkbookRunbookName)) {
+resource extensionAttributeWorkbook 'Microsoft.Insights/workbooks@2023-06-01' = if (deployWorkbook && monitorExtensionAttributeRunbook) {
   name: guid(logAnalyticsWorkspaceId, 'blkgm-extension-attribute-monitoring-v2')
   location: location
   tags: union(tags, {
@@ -305,7 +311,7 @@ resource extensionAttributeWorkbook 'Microsoft.Insights/workbooks@2023-06-01' = 
   properties: {
     displayName: 'BitLocker Extension Attribute - Operations Overview v2'
     serializedData: replace(
-      replace(loadTextContent('workbooks/extension-attribute-monitoring-v2.workbook.json'), '__EXTENSION_RUNBOOK_NAME__', extensionAttributeWorkbookRunbookName),
+      replace(loadTextContent('workbooks/extension-attribute-monitoring-v2.workbook.json'), '__EXTENSION_RUNBOOK_NAME__', extensionAttributeRunbookName),
       '__EXTENSION_ATTRIBUTE_NAME__',
       extensionAttributeName
     )
@@ -319,4 +325,4 @@ resource extensionAttributeWorkbook 'Microsoft.Insights/workbooks@2023-06-01' = 
 output actionGroupId string = actionGroup.id
 
 @description('Resource id del workbook extension attribute, se distribuito.')
-output extensionAttributeWorkbookId string = deployWorkbook && !empty(extensionAttributeWorkbookRunbookName) ? extensionAttributeWorkbook.id : ''
+output extensionAttributeWorkbookId string = deployWorkbook && monitorExtensionAttributeRunbook ? extensionAttributeWorkbook.id : ''

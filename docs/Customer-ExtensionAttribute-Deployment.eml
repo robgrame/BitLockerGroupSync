@@ -67,7 +67,8 @@ seguenti valori:
 
 COMANDO DI DEPLOYMENT ESCLUSIVO
 
-Eseguire dalla cartella principale del repository, su una singola riga:
+Eseguire dalla cartella principale del repository. Si tratta di un unico
+comando, anche se il client email può visualizzarlo su più righe:
 
 .\deploy.ps1 -ResourceGroupName '<RESOURCE-GROUP>' -Location '<REGIONE>' -TenantId '<TENANT-ID>' -SubscriptionId '<SUBSCRIPTION-ID>' -RunbookSelection ExtensionAttribute -GrantGraphPermissions -StartExtensionAttributeJobNow
 
@@ -137,13 +138,11 @@ Content-Transfer-Encoding: 8bit
   <style>
     table { table-layout: fixed; }
     td, th, p, li { overflow-wrap: break-word; word-wrap: break-word; }
-    .command-line { max-width: 100%; overflow-x: auto; white-space: nowrap; }
-    @media only screen and (max-width: 760px) {
-      .command-line {
-        white-space: normal !important;
-        overflow-wrap: anywhere !important;
-        word-break: break-word !important;
-      }
+    .command-line {
+      max-width: 100%;
+      white-space: normal;
+      overflow-wrap: anywhere;
+      word-break: break-word;
     }
   </style>
 </head>
@@ -220,15 +219,15 @@ Content-Transfer-Encoding: 8bit
               </table>
 
               <h2 style="font-size:21px;color:#0b3a6e;margin:0 0 13px;">3. Deployment esclusivo</h2>
-              <p style="font-size:15px;line-height:1.65;margin:0 0 12px;">Dalla cartella principale del repository eseguire il comando seguente. La command line è intenzionalmente mantenuta su una singola riga.</p>
-              <div class="command-line" style="width:100%;max-width:100%;box-sizing:border-box;background:#0d1117;border:1px solid #30363d;border-radius:5px;padding:16px 18px;margin:0 0 22px;overflow-x:auto;white-space:nowrap;font-family:Consolas,'Courier New',monospace;font-size:13px;line-height:1.6;"><span style="color:#79c0ff;">.\deploy.ps1</span> <span style="color:#d2a8ff;">-ResourceGroupName</span> <span style="color:#a5d6ff;">'&lt;RESOURCE-GROUP&gt;'</span> <span style="color:#d2a8ff;">-Location</span> <span style="color:#a5d6ff;">'&lt;REGIONE&gt;'</span> <span style="color:#d2a8ff;">-TenantId</span> <span style="color:#a5d6ff;">'&lt;TENANT-ID&gt;'</span> <span style="color:#d2a8ff;">-SubscriptionId</span> <span style="color:#a5d6ff;">'&lt;SUBSCRIPTION-ID&gt;'</span> <span style="color:#d2a8ff;">-RunbookSelection</span> <span style="color:#ffa657;">ExtensionAttribute</span> <span style="color:#d2a8ff;">-GrantGraphPermissions</span> <span style="color:#d2a8ff;">-StartExtensionAttributeJobNow</span></div>
+              <p style="font-size:15px;line-height:1.65;margin:0 0 12px;">Dalla cartella principale del repository eseguire il comando seguente. Si tratta di un unico comando, anche quando il client email lo visualizza su più righe.</p>
+              <div class="command-line" style="width:100%;max-width:100%;box-sizing:border-box;background:#0d1117;border:1px solid #30363d;border-radius:5px;padding:16px 18px;margin:0 0 22px;white-space:normal;overflow-wrap:anywhere;word-wrap:break-word;word-break:break-word;font-family:Consolas,'Courier New',monospace;font-size:13px;line-height:1.6;"><span style="color:#79c0ff;">.\deploy.ps1</span> <span style="color:#d2a8ff;">-ResourceGroupName</span> <span style="color:#a5d6ff;">'&lt;RESOURCE-GROUP&gt;'</span> <span style="color:#d2a8ff;">-Location</span> <span style="color:#a5d6ff;">'&lt;REGIONE&gt;'</span> <span style="color:#d2a8ff;">-TenantId</span> <span style="color:#a5d6ff;">'&lt;TENANT-ID&gt;'</span> <span style="color:#d2a8ff;">-SubscriptionId</span> <span style="color:#a5d6ff;">'&lt;SUBSCRIPTION-ID&gt;'</span> <span style="color:#d2a8ff;">-RunbookSelection</span> <span style="color:#ffa657;">ExtensionAttribute</span> <span style="color:#d2a8ff;">-GrantGraphPermissions</span> <span style="color:#d2a8ff;">-StartExtensionAttributeJobNow</span></div>
 
               <div style="background:#fff4e5;border:1px solid #f0c36d;border-left:6px solid #d97706;padding:17px 20px;margin:0 0 26px;font-size:15px;line-height:1.65;">
                 <strong>Deployment in delta.</strong> <code>RunbookSelection ExtensionAttribute</code> distribuisce o aggiorna soltanto il secondo runbook e preserva GroupSync, la sua schedule, i webhook, le identità assegnate, l'accesso di rete e le permission esistenti. Utilizzare <code>RunbookSelection All</code> solo quando si desidera aggiornare entrambi i runbook. La rimozione dei componenti non selezionati avviene esclusivamente aggiungendo lo switch esplicito <code>-FullReconcile</code>.
               </div>
 
               <p style="font-size:15px;line-height:1.65;margin:0 0 12px;"><strong>Aggiornamento completo:</strong> per aggiornare entrambi i runbook utilizzare il comando seguente.</p>
-              <div class="command-line" style="width:100%;max-width:100%;box-sizing:border-box;background:#0d1117;border:1px solid #30363d;border-radius:5px;padding:16px 18px;margin:0 0 26px;overflow-x:auto;white-space:nowrap;font-family:Consolas,'Courier New',monospace;font-size:13px;line-height:1.6;"><span style="color:#79c0ff;">.\deploy.ps1</span> <span style="color:#d2a8ff;">-ResourceGroupName</span> <span style="color:#a5d6ff;">'&lt;RESOURCE-GROUP&gt;'</span> <span style="color:#d2a8ff;">-Location</span> <span style="color:#a5d6ff;">'&lt;REGIONE&gt;'</span> <span style="color:#d2a8ff;">-TenantId</span> <span style="color:#a5d6ff;">'&lt;TENANT-ID&gt;'</span> <span style="color:#d2a8ff;">-SubscriptionId</span> <span style="color:#a5d6ff;">'&lt;SUBSCRIPTION-ID&gt;'</span> <span style="color:#d2a8ff;">-RunbookSelection</span> <span style="color:#ffa657;">All</span> <span style="color:#d2a8ff;">-GrantGraphPermissions</span> <span style="color:#d2a8ff;">-StartExtensionAttributeJobNow</span></div>
+              <div class="command-line" style="width:100%;max-width:100%;box-sizing:border-box;background:#0d1117;border:1px solid #30363d;border-radius:5px;padding:16px 18px;margin:0 0 26px;white-space:normal;overflow-wrap:anywhere;word-wrap:break-word;word-break:break-word;font-family:Consolas,'Courier New',monospace;font-size:13px;line-height:1.6;"><span style="color:#79c0ff;">.\deploy.ps1</span> <span style="color:#d2a8ff;">-ResourceGroupName</span> <span style="color:#a5d6ff;">'&lt;RESOURCE-GROUP&gt;'</span> <span style="color:#d2a8ff;">-Location</span> <span style="color:#a5d6ff;">'&lt;REGIONE&gt;'</span> <span style="color:#d2a8ff;">-TenantId</span> <span style="color:#a5d6ff;">'&lt;TENANT-ID&gt;'</span> <span style="color:#d2a8ff;">-SubscriptionId</span> <span style="color:#a5d6ff;">'&lt;SUBSCRIPTION-ID&gt;'</span> <span style="color:#d2a8ff;">-RunbookSelection</span> <span style="color:#ffa657;">All</span> <span style="color:#d2a8ff;">-GrantGraphPermissions</span> <span style="color:#d2a8ff;">-StartExtensionAttributeJobNow</span></div>
 
               <h2 style="font-size:21px;color:#0b3a6e;margin:0 0 13px;">4. Permission Microsoft Graph</h2>
               <p style="font-size:15px;line-height:1.65;margin:0 0 14px;">Per la selezione ExtensionAttribute, alla Managed Identity vengono assegnate esclusivamente le permission applicative necessarie:</p>
@@ -238,7 +237,7 @@ Content-Transfer-Encoding: 8bit
               </table>
               <p style="font-size:14px;line-height:1.65;margin:0 0 12px;color:#52606d;">Durante il deployment viene richiesto un login amministrativo tramite device code. Completare l'autenticazione nel browser entro il tempo indicato dalla console.</p>
               <p style="font-size:15px;line-height:1.65;margin:0 0 12px;">Se le permission sono già state assegnate e verificate separatamente, utilizzare:</p>
-              <div class="command-line" style="width:100%;max-width:100%;box-sizing:border-box;background:#0d1117;border:1px solid #30363d;border-radius:5px;padding:16px 18px;margin:0 0 26px;overflow-x:auto;white-space:nowrap;font-family:Consolas,'Courier New',monospace;font-size:13px;line-height:1.6;"><span style="color:#79c0ff;">.\deploy.ps1</span> <span style="color:#d2a8ff;">-ResourceGroupName</span> <span style="color:#a5d6ff;">'&lt;RESOURCE-GROUP&gt;'</span> <span style="color:#d2a8ff;">-Location</span> <span style="color:#a5d6ff;">'&lt;REGIONE&gt;'</span> <span style="color:#d2a8ff;">-TenantId</span> <span style="color:#a5d6ff;">'&lt;TENANT-ID&gt;'</span> <span style="color:#d2a8ff;">-SubscriptionId</span> <span style="color:#a5d6ff;">'&lt;SUBSCRIPTION-ID&gt;'</span> <span style="color:#d2a8ff;">-RunbookSelection</span> <span style="color:#ffa657;">ExtensionAttribute</span> <span style="color:#d2a8ff;">-PermissionsConfirmed</span> <span style="color:#d2a8ff;">-StartExtensionAttributeJobNow</span></div>
+              <div class="command-line" style="width:100%;max-width:100%;box-sizing:border-box;background:#0d1117;border:1px solid #30363d;border-radius:5px;padding:16px 18px;margin:0 0 26px;white-space:normal;overflow-wrap:anywhere;word-wrap:break-word;word-break:break-word;font-family:Consolas,'Courier New',monospace;font-size:13px;line-height:1.6;"><span style="color:#79c0ff;">.\deploy.ps1</span> <span style="color:#d2a8ff;">-ResourceGroupName</span> <span style="color:#a5d6ff;">'&lt;RESOURCE-GROUP&gt;'</span> <span style="color:#d2a8ff;">-Location</span> <span style="color:#a5d6ff;">'&lt;REGIONE&gt;'</span> <span style="color:#d2a8ff;">-TenantId</span> <span style="color:#a5d6ff;">'&lt;TENANT-ID&gt;'</span> <span style="color:#d2a8ff;">-SubscriptionId</span> <span style="color:#a5d6ff;">'&lt;SUBSCRIPTION-ID&gt;'</span> <span style="color:#d2a8ff;">-RunbookSelection</span> <span style="color:#ffa657;">ExtensionAttribute</span> <span style="color:#d2a8ff;">-PermissionsConfirmed</span> <span style="color:#d2a8ff;">-StartExtensionAttributeJobNow</span></div>
 
               <h2 style="font-size:21px;color:#0b3a6e;margin:0 0 13px;">5. Automation Variables</h2>
               <p style="font-size:15px;line-height:1.65;margin:0 0 14px;">Il deployment crea le variabili seguenti solo se non esistono già. I valori presenti vengono preservati nei deployment successivi.</p>

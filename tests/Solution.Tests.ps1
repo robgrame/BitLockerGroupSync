@@ -502,6 +502,8 @@ Describe 'Orchestrazione del deployment' {
         $script:deployText | Should -Match "'-GraphAppRolesBase64'"
         $script:deployText | Should -Match 'if \(\$FullReconcile\) \{[\s\S]*\$graphPermissionArguments \+= ''-Reconcile'''
         $script:deployText | Should -Match 'deployGraphAuthenticationModule = \$deployGraphAuthenticationModule'
+        $script:deployText | Should -Match '\$graphAuthenticationModuleResourceId'
+        $script:deployText | Should -Match "-ApiVersion '2023-11-01'"
         $script:deployText | Should -Match 'preservedAutomationAccountUserAssignedIdentities = \$preservedAutomationAccountUserAssignedIdentities'
         $script:deployText | Should -Match 'preserveAutomationAccountSystemAssignedIdentity = \$preserveAutomationAccountSystemAssignedIdentity'
         $script:deployText | Should -Match 'automationAccountPublicNetworkAccess = \$effectiveAutomationAccountPublicNetworkAccess'

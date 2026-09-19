@@ -117,7 +117,7 @@
     configurata nel file .bicepparam.
 
 .NOTES
-    Version: 1.5.1
+    Version: 1.5.2
 
     Per visualizzare la guida completa:
         Get-Help .\deploy.ps1 -Full
@@ -1063,7 +1063,7 @@ else {
     @{
         solution  = 'BitLockerGroupSync'
         managedBy = 'deploy.ps1'
-        version   = '1.5.1'
+        version   = '1.5.2'
     }
 }
 $configuredScheduleIntervalHours = if ($null -ne $parameterValues.scheduleIntervalHours) {
@@ -1234,10 +1234,11 @@ $monitoringSelection = Resolve-RunbookMonitoringSelection `
 $monitorGroupSyncRunbook = $monitoringSelection.MonitorGroupSync
 $monitorExtensionAttributeRunbook = $monitoringSelection.MonitorExtensionAttribute
 $existingGraphAuthenticationModule = if ($existingAutomationAccount) {
+    $graphAuthenticationModuleResourceId =
+        "$($existingAutomationAccountResource.ResourceId)/powerShell72Modules/Microsoft.Graph.Authentication"
     Get-AzResource `
-        -ResourceGroupName $ResourceGroupName `
-        -ResourceType 'Microsoft.Automation/automationAccounts/powerShell72Modules' `
-        -Name "$configuredAutomationAccountName/Microsoft.Graph.Authentication" `
+        -ResourceId $graphAuthenticationModuleResourceId `
+        -ApiVersion '2023-11-01' `
         -ErrorAction SilentlyContinue
 }
 else {

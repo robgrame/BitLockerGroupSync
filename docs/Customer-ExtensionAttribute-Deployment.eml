@@ -12,7 +12,7 @@ Content-Transfer-Encoding: 8bit
 
 Gentile Cliente,
 
-è disponibile la versione 1.5.1 di Nimbus.BitLockerGroupSync, che consente di
+è disponibile la versione 1.5.2 di Nimbus.BitLockerGroupSync, che consente di
 distribuire il solo runbook Sync-BitLockerExtensionAttribute e il workbook
 BitLocker Extension Attribute - Operations Overview v2.
 
@@ -153,7 +153,7 @@ Content-Transfer-Encoding: 8bit
           <tr>
             <td style="padding:30px 4%;">
               <p style="font-size:16px;line-height:1.65;margin:0 0 18px;">Gentile Cliente,</p>
-              <p style="font-size:16px;line-height:1.65;margin:0 0 24px;">è disponibile la versione <strong>1.5.1</strong> di <strong>Nimbus.BitLockerGroupSync</strong>, che consente di distribuire il runbook <strong>Sync-BitLockerExtensionAttribute</strong> e il nuovo workbook <strong>BitLocker Extension Attribute - Operations Overview v2</strong>.</p>
+              <p style="font-size:16px;line-height:1.65;margin:0 0 24px;">è disponibile la versione <strong>1.5.2</strong> di <strong>Nimbus.BitLockerGroupSync</strong>, che consente di distribuire il runbook <strong>Sync-BitLockerExtensionAttribute</strong> e il nuovo workbook <strong>BitLocker Extension Attribute - Operations Overview v2</strong>.</p>
 
               <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;background:#eef8f0;border:1px solid #b8d8c0;border-collapse:collapse;margin:0 0 26px;">
                 <tr>
@@ -259,7 +259,7 @@ Content-Transfer-Encoding: 8bit
 
         <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;background:#172033;border-collapse:collapse;">
           <tr>
-            <td style="padding:20px 4%;font-size:12px;line-height:1.6;color:#c9d3df;">Nimbus.BitLockerGroupSync · Deployment Extension Attribute v1.5.1<br>Mittente, destinatario, segnaposto e firma sono modificabili aprendo il file EML come bozza.</td>
+            <td style="padding:20px 4%;font-size:12px;line-height:1.6;color:#c9d3df;">Nimbus.BitLockerGroupSync · Deployment Extension Attribute v1.5.2<br>Mittente, destinatario, segnaposto e firma sono modificabili aprendo il file EML come bozza.</td>
           </tr>
         </table>
       </td>

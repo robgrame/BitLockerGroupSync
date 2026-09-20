@@ -10,12 +10,12 @@ param automationAccountPublicNetworkAccess = true
 param logAnalyticsWorkspaceName = 'aa-bitlocker-groupsync-law'
 param runbookName = 'Sync-BitLockerComplianceGroups'
 
-// URL raw del runbook nel repo pubblico (branch main).
-param runbookContentUri = 'https://raw.githubusercontent.com/robgrame/Nimbus.BitLockerGroupSync/main/runbook/Sync-BitLockerComplianceGroups.ps1'
+// URL raw fissati a un commit immutabile. Aggiornare lo SHA quando cambia il contenuto dei runbook.
+param runbookContentUri = 'https://raw.githubusercontent.com/robgrame/BitLockerGroupSync/e4890508207604c6765c1cb74d6180d530b3542c/runbook/Sync-BitLockerComplianceGroups.ps1'
 param deployRunbookContentLinks = true
 param deployGroupSyncRunbook = true
 param deployExtensionAttributeRunbook = true
-param extensionAttributeRunbookContentUri = 'https://raw.githubusercontent.com/robgrame/Nimbus.BitLockerGroupSync/main/runbook/Sync-BitLockerExtensionAttribute.ps1'
+param extensionAttributeRunbookContentUri = 'https://raw.githubusercontent.com/robgrame/BitLockerGroupSync/e4890508207604c6765c1cb74d6180d530b3542c/runbook/Sync-BitLockerExtensionAttribute.ps1'
 param extensionAttributeName = 'extensionAttribute10'
 param extensionAttributeEncryptedValue = 'enc'
 param extensionAttributeNotEncryptedValue = 'notenc'
@@ -81,5 +81,5 @@ param tags = {
   solution: 'BitLockerGroupSync'
   managedBy: 'bicep'
   environment: 'prod'
-  version: '1.5.3'
+  version: '1.5.4'
 }

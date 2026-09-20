@@ -26,4 +26,5 @@ Thumbs.db
 
 # Log e output
 *.log
+testResults.xml
 output/

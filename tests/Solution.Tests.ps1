@@ -630,6 +630,54 @@ Describe 'Assegnazione permission Graph alla managed identity' {
     }
 }
 
+Describe 'Riferimenti repository GitHub' {
+    BeforeAll {
+        $script:repositoryReferenceFiles = @(
+            & git -C $root ls-files |
+                Where-Object { $_ -match '\.(bicep|bicepparam|eml|md|ps1|yml)$' } |
+                ForEach-Object { Join-Path $root $_ }
+        )
+    }
+
+    It 'Usa il nuovo nome repository nei riferimenti operativi' {
+        foreach ($path in $script:repositoryReferenceFiles) {
+            $content = Get-Content $path -Raw
+            $content | Should -Not -Match 'robgrame/Nimbus\.BitLockerGroupSync' -Because $path
+            $content | Should -Not -Match 'BitLockerGroupSync/(main|master)/runbook/' -Because $path
+        }
+    }
+
+    It 'Mantiene validi gli URL raw dei runbook nei file Bicep' {
+        $mainBicepText = Get-Content (Join-Path $root 'bicep\main.bicep') -Raw
+        $mainBicepParamText = Get-Content (Join-Path $root 'bicep\main.bicepparam') -Raw
+        $immutableRawBase = 'https://raw\.githubusercontent\.com/robgrame/BitLockerGroupSync/[0-9a-f]{40}/runbook/'
+
+        $mainBicepText |
+            Should -Match ($immutableRawBase + 'Sync-BitLockerExtensionAttribute\.ps1')
+        $mainBicepParamText |
+            Should -Match ($immutableRawBase + 'Sync-BitLockerComplianceGroups\.ps1')
+        $mainBicepParamText |
+            Should -Match ($immutableRawBase + 'Sync-BitLockerExtensionAttribute\.ps1')
+
+        $pinnedShas = [regex]::Matches(
+            "$mainBicepText`n$mainBicepParamText",
+            'raw\.githubusercontent\.com/robgrame/BitLockerGroupSync/(?<sha>[0-9a-f]{40})/runbook/'
+        ).Groups |
+            Where-Object Name -EQ 'sha' |
+            ForEach-Object Value |
+            Sort-Object -Unique
+        $pinnedShas | Should -HaveCount 1
+    }
+
+    It 'Documenta la directory creata dal clone con il nuovo nome' {
+        $deploymentGuideText = Get-Content (Join-Path $root 'docs\DEPLOYMENT-GUIDE.md') -Raw
+        $readmeText = Get-Content (Join-Path $root 'README.md') -Raw
+
+        $deploymentGuideText | Should -Match ([regex]::Escape('Set-Location .\BitLockerGroupSync'))
+        $readmeText | Should -Match '(?m)^BitLockerGroupSync/\r?$'
+    }
+}
+
 Describe 'Template richiesta permission Entra' {
     BeforeAll { $script:mailText = Get-Content $script:mailTemplate -Raw }
     It 'E una bozza EML con mittente e destinatario modificabili' {

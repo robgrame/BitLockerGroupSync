@@ -12,7 +12,7 @@ Content-Transfer-Encoding: 8bit
 
 Gentile Cliente,
 
-è disponibile la versione 1.5.3 di Nimbus.BitLockerGroupSync, che consente di
+è disponibile la versione 1.5.4 di Nimbus.BitLockerGroupSync, che consente di
 distribuire il solo runbook Sync-BitLockerExtensionAttribute e il workbook
 BitLocker Extension Attribute - Operations Overview v2.
 
@@ -29,7 +29,7 @@ PREREQUISITI
 - Privileged Role Administrator, o processo amministrativo equivalente, per
   assegnare le application permission Microsoft Graph alla Managed Identity;
 - accesso al repository:
-  https://github.com/robgrame/Nimbus.BitLockerGroupSync
+  https://github.com/robgrame/BitLockerGroupSync
 
 PARAMETRI BICEP
 
@@ -169,7 +169,7 @@ Content-Transfer-Encoding: 8bit
           <tr>
             <td style="padding:30px 4%;overflow-wrap:break-word;word-wrap:break-word;">
               <p style="font-size:16px;line-height:1.65;margin:0 0 18px;">Gentile Cliente,</p>
-              <p style="font-size:16px;line-height:1.65;margin:0 0 24px;">è disponibile la versione <strong>1.5.3</strong> di <strong>Nimbus.BitLockerGroupSync</strong>, che consente di distribuire il runbook <strong>Sync-BitLockerExtensionAttribute</strong> e il nuovo workbook <strong>BitLocker Extension Attribute - Operations Overview v2</strong>.</p>
+              <p style="font-size:16px;line-height:1.65;margin:0 0 24px;">è disponibile la versione <strong>1.5.4</strong> di <strong>Nimbus.BitLockerGroupSync</strong>, che consente di distribuire il runbook <strong>Sync-BitLockerExtensionAttribute</strong> e il nuovo workbook <strong>BitLocker Extension Attribute - Operations Overview v2</strong>.</p>
 
               <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;table-layout:fixed;background:#eef8f0;border:1px solid #b8d8c0;border-collapse:collapse;margin:0 0 26px;">
                 <tr>
@@ -184,7 +184,7 @@ Content-Transfer-Encoding: 8bit
                 <li>PowerShell 7 e Azure CLI sulla postazione di deployment.</li>
                 <li>Ruolo <strong>Contributor</strong> sul Resource Group di destinazione.</li>
                 <li><strong>Privileged Role Administrator</strong>, o processo amministrativo equivalente, per assegnare le application permission Microsoft Graph.</li>
-                <li>Accesso al repository <a href="https://github.com/robgrame/Nimbus.BitLockerGroupSync" style="color:#0067b8;font-weight:600;">Nimbus.BitLockerGroupSync</a>.</li>
+                <li>Accesso al repository <a href="https://github.com/robgrame/BitLockerGroupSync" style="color:#0067b8;font-weight:600;">BitLockerGroupSync</a>.</li>
               </ul>
 
               <h2 style="font-size:21px;color:#0b3a6e;margin:0 0 13px;">2. Parametri Bicep</h2>
@@ -203,7 +203,7 @@ Content-Transfer-Encoding: 8bit
                 <tr style="background:#f8fafc;"><td style="padding:10px 12px;border:1px solid #dbe3ec;font-family:Consolas,monospace;">deployRunbookContentLinks</td><td style="padding:10px 12px;border:1px solid #dbe3ec;"><code>true</code></td><td style="padding:10px 12px;border:1px solid #dbe3ec;">Importa il contenuto dal repository pubblico.</td></tr>
                 <tr><td style="padding:10px 12px;border:1px solid #dbe3ec;font-family:Consolas,monospace;">deployGroupSyncRunbook</td><td style="padding:10px 12px;border:1px solid #dbe3ec;"><code>false</code></td><td style="padding:10px 12px;border:1px solid #dbe3ec;">Esclude il runbook di gestione gruppi.</td></tr>
                 <tr style="background:#f8fafc;"><td style="padding:10px 12px;border:1px solid #dbe3ec;font-family:Consolas,monospace;">deployExtensionAttributeRunbook</td><td style="padding:10px 12px;border:1px solid #dbe3ec;"><code>true</code></td><td style="padding:10px 12px;border:1px solid #dbe3ec;">Abilita il secondo runbook.</td></tr>
-                <tr><td style="padding:10px 12px;border:1px solid #dbe3ec;font-family:Consolas,monospace;">extensionAttributeRunbookContentUri</td><td style="padding:10px 12px;border:1px solid #dbe3ec;"><code>'https://raw.githubusercontent.com/robgrame/Nimbus.BitLockerGroupSync/&lt;COMMIT-SHA&gt;/runbook/Sync-BitLockerExtensionAttribute.ps1'</code></td><td style="padding:10px 12px;border:1px solid #dbe3ec;">URL immutabile del runbook da pubblicare.</td></tr>
+                <tr><td style="padding:10px 12px;border:1px solid #dbe3ec;font-family:Consolas,monospace;">extensionAttributeRunbookContentUri</td><td style="padding:10px 12px;border:1px solid #dbe3ec;"><code>'https://raw.githubusercontent.com/robgrame/BitLockerGroupSync/&lt;COMMIT-SHA&gt;/runbook/Sync-BitLockerExtensionAttribute.ps1'</code></td><td style="padding:10px 12px;border:1px solid #dbe3ec;">URL immutabile del runbook da pubblicare.</td></tr>
                 <tr style="background:#f8fafc;"><td style="padding:10px 12px;border:1px solid #dbe3ec;font-family:Consolas,monospace;">extensionAttributeName</td><td style="padding:10px 12px;border:1px solid #dbe3ec;"><code>'extensionAttribute10'</code></td><td style="padding:10px 12px;border:1px solid #dbe3ec;">Attributo Entra aggiornato dal runbook.</td></tr>
                 <tr><td style="padding:10px 12px;border:1px solid #dbe3ec;font-family:Consolas,monospace;">extensionAttributeEncryptedValue</td><td style="padding:10px 12px;border:1px solid #dbe3ec;"><code>'enc'</code></td><td style="padding:10px 12px;border:1px solid #dbe3ec;">Valore assegnato ai device cifrati.</td></tr>
                 <tr style="background:#f8fafc;"><td style="padding:10px 12px;border:1px solid #dbe3ec;font-family:Consolas,monospace;">extensionAttributeNotEncryptedValue</td><td style="padding:10px 12px;border:1px solid #dbe3ec;"><code>'notenc'</code></td><td style="padding:10px 12px;border:1px solid #dbe3ec;">Valore assegnato ai device non cifrati.</td></tr>
@@ -275,7 +275,7 @@ Content-Transfer-Encoding: 8bit
 
         <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;table-layout:fixed;background:#172033;border-collapse:collapse;">
           <tr>
-            <td style="padding:20px 4%;font-size:12px;line-height:1.6;color:#c9d3df;">Nimbus.BitLockerGroupSync · Deployment Extension Attribute v1.5.3<br>Mittente, destinatario, segnaposto e firma sono modificabili aprendo il file EML come bozza.</td>
+            <td style="padding:20px 4%;font-size:12px;line-height:1.6;color:#c9d3df;">Nimbus.BitLockerGroupSync · Deployment Extension Attribute v1.5.4<br>Mittente, destinatario, segnaposto e firma sono modificabili aprendo il file EML come bozza.</td>
           </tr>
         </table>
       </td>

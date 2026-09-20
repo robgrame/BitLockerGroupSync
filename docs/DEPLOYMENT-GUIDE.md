@@ -243,8 +243,8 @@ passaggio di attivazione successivo.
 Clonare la repository e creare un file locale non versionato:
 
 ```powershell
-git clone https://github.com/robgrame/Nimbus.BitLockerGroupSync.git
-Set-Location .\Nimbus.BitLockerGroupSync
+git clone https://github.com/robgrame/BitLockerGroupSync.git
+Set-Location .\BitLockerGroupSync
 
 Copy-Item .\bicep\main.bicepparam .\bicep\customer.local.bicepparam
 ```

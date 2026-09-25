@@ -49,7 +49,7 @@ param monitorGroupSyncRunbook bool = deployGroupSyncRunbook
 param monitorExtensionAttributeRunbook bool = deployExtensionAttributeRunbook
 
 @description('URL raw (pubblico) del runbook di sincronizzazione extension attribute.')
-param extensionAttributeRunbookContentUri string = 'https://raw.githubusercontent.com/robgrame/BitLockerGroupSync/e4890508207604c6765c1cb74d6180d530b3542c/runbook/Sync-BitLockerExtensionAttribute.ps1'
+param extensionAttributeRunbookContentUri string = 'https://raw.githubusercontent.com/robgrame/BitLockerGroupSync/a00e704595be69f4c8a26dd53b72a9126be5d34e/runbook/Sync-BitLockerExtensionAttribute.ps1'
 
 @description('Extension attribute Entra aggiornato dal secondo runbook.')
 @allowed([
@@ -228,7 +228,7 @@ param notificationDetailLimit int = 50
 param tags object = {
   solution: 'BitLockerGroupSync'
   managedBy: 'bicep'
-  version: '1.6.5'
+  version: '1.6.6'
 }
 
 var graphAuthModuleUri = 'https://www.powershellgallery.com/api/v2/package/Microsoft.Graph.Authentication'

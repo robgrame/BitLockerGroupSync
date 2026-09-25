@@ -97,20 +97,77 @@ Describe 'Import-RuntimeConfiguration' {
                         AppClientId = ''
                         CertificateAssetName = 'GraphAuthCertificate'
                         ClientSecretVariableName = 'GraphClientSecret'
-                        AllowValueTakeover = $true
-                        ClearManagedValuesForOutOfScopeDevices = $true
+                        GroupPrefix = 'Intune'
+                        EncryptedGroupName = 'Encrypted'
+                        EnableKeyEscrowCheck = 'false'
                     }
                 }
             }
         }
     }
 
-    It 'carica correttamente una Automation Variable restituita come Hashtable' {
+    It 'carica identita e autenticazione dalla configurazione GroupSync ignorando le chiavi aggiuntive' {
         Import-RuntimeConfiguration
 
         $script:ExtensionAttributeName | Should -Be 'extensionAttribute9'
+        $script:ManagedIdentityClientId | Should -Be 'client-id'
+        $script:AllowValueTakeover | Should -BeFalse
+        $script:ClearManagedValuesForOutOfScopeDevices | Should -BeFalse
+        Should -Invoke Get-AutomationVariable -Times 1 -ParameterFilter {
+            $Name -eq 'BitLockerSyncRuntimeConfig'
+        }
+    }
+
+    It 'applica le opzioni extension quando sono presenti nella configurazione condivisa' {
+        Mock Get-AutomationVariable {
+            switch ($Name) {
+                'BitLockerExtensionAttributeName' { 'extensionAttribute9' }
+                'BitLockerExtensionAttributeEncryptedValue' { 'encrypted' }
+                'BitLockerExtensionAttributeNotEncryptedValue' { 'not-encrypted' }
+                default {
+                    @{
+                        TargetOperatingSystem = 'Windows'
+                        AuthenticationMode = 'ManagedIdentity'
+                        ManagedIdentityClientId = 'client-id'
+                        AppTenantId = ''
+                        AppClientId = ''
+                        CertificateAssetName = 'GraphAuthCertificate'
+                        ClientSecretVariableName = 'GraphClientSecret'
+                        AllowValueTakeover = 'true'
+                        ClearManagedValuesForOutOfScopeDevices = 'true'
+                    }
+                }
+            }
+        }
+
+        Import-RuntimeConfiguration
+
         $script:AllowValueTakeover | Should -BeTrue
         $script:ClearManagedValuesForOutOfScopeDevices | Should -BeTrue
+    }
+
+    It 'rifiuta un valore booleano non valido nella configurazione condivisa' {
+        Mock Get-AutomationVariable {
+            switch ($Name) {
+                'BitLockerExtensionAttributeName' { 'extensionAttribute9' }
+                'BitLockerExtensionAttributeEncryptedValue' { 'encrypted' }
+                'BitLockerExtensionAttributeNotEncryptedValue' { 'not-encrypted' }
+                default {
+                    @{
+                        TargetOperatingSystem = 'Windows'
+                        AuthenticationMode = 'ManagedIdentity'
+                        ManagedIdentityClientId = 'client-id'
+                        AppTenantId = ''
+                        AppClientId = ''
+                        CertificateAssetName = 'GraphAuthCertificate'
+                        ClientSecretVariableName = 'GraphClientSecret'
+                        AllowValueTakeover = 'sometimes'
+                    }
+                }
+            }
+        }
+
+        { Import-RuntimeConfiguration } | Should -Throw '*valore booleano non valido*'
     }
 
     It 'fallisce se la Automation Variable non e disponibile' {
@@ -140,8 +197,6 @@ Describe 'Import-RuntimeConfiguration' {
                 AppClientId = ''
                 CertificateAssetName = 'GraphAuthCertificate'
                 ClientSecretVariableName = 'GraphClientSecret'
-                AllowValueTakeover = $false
-                ClearManagedValuesForOutOfScopeDevices = $false
             }
         }
 
@@ -161,8 +216,6 @@ Describe 'Import-RuntimeConfiguration' {
                 AppClientId = ''
                 CertificateAssetName = 'GraphAuthCertificate'
                 ClientSecretVariableName = 'GraphClientSecret'
-                AllowValueTakeover = $false
-                ClearManagedValuesForOutOfScopeDevices = $false
             }
         }
 

@@ -52,7 +52,7 @@ Describe 'Sintassi PowerShell' {
         }
 
         It 'Carica configurazione protetta senza consentire override dai parametri job' {
-            $script:extensionText | Should -Match 'BitLockerExtensionAttributeRuntimeConfig'
+            $script:extensionText | Should -Match 'BitLockerSyncRuntimeConfig'
             $script:extensionText | Should -Match '\$config -is \[System\.Collections\.IDictionary\]'
             $script:extensionText | Should -Match 'AllowValueTakeover'
             $script:extensionText | Should -Match 'Automation Variable obbligatoria'
@@ -61,6 +61,7 @@ Describe 'Sintassi PowerShell' {
             $script:extensionText | Should -Match 'BitLockerExtensionAttributeEncryptedValue'
             $script:extensionText | Should -Match 'BitLockerExtensionAttributeNotEncryptedValue'
             $script:extensionText | Should -Not -Match '\[string\]\$ExtensionAttributeName'
+            $script:extensionText | Should -Not -Match 'BitLockerExtensionAttributeRuntimeConfig'
         }
 
         It 'Legge isEncrypted da Intune e extensionAttributes da Entra' {

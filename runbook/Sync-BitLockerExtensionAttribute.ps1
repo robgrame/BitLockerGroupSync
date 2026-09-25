@@ -13,7 +13,7 @@
     vengono ignorati e contabilizzati nel riepilogo.
 
 .NOTES
-    Version: 1.4.0
+    Version: 1.5.1
 
     Permessi Graph application richiesti:
       - DeviceManagementManagedDevices.Read.All
@@ -58,8 +58,22 @@ function Write-Log {
     Write-Verbose ("[{0}] [{1}] {2}" -f $timestamp, $Level, $Message)
 }
 
+function ConvertTo-Bool {
+    param(
+        [Parameter(Mandatory)][object]$Value,
+        [Parameter(Mandatory)][string]$Name
+    )
+
+    if ($Value -is [bool]) { return $Value }
+    switch (("$Value").Trim().ToLowerInvariant()) {
+        { $_ -in @('true', '1', 'yes', 'y', 'on') } { return $true }
+        { $_ -in @('false', '0', 'no', 'n', 'off', '') } { return $false }
+        default { throw "Automation Variable 'BitLockerSyncRuntimeConfig' contiene un valore booleano non valido per '$Name': '$Value'." }
+    }
+}
+
 function Import-RuntimeConfiguration {
-    $variableName = 'BitLockerExtensionAttributeRuntimeConfig'
+    $variableName = 'BitLockerSyncRuntimeConfig'
     try {
         $config = Get-AutomationVariable -Name $variableName -ErrorAction Stop
         if ($config -is [string]) {
@@ -78,8 +92,6 @@ function Import-RuntimeConfiguration {
         'AppClientId',
         'CertificateAssetName',
         'ClientSecretVariableName'
-        'AllowValueTakeover'
-        'ClearManagedValuesForOutOfScopeDevices'
     )
 
     $imported = 0
@@ -105,12 +117,7 @@ function Import-RuntimeConfiguration {
             continue
         }
 
-        if ($name -in @('AllowValueTakeover', 'ClearManagedValuesForOutOfScopeDevices')) {
-            $value = [System.Convert]::ToBoolean($value)
-        }
-        else {
-            $value = [string]$value
-        }
+        $value = [string]$value
         Set-Variable -Name $name -Value $value -Scope Script
         $imported++
     }
@@ -118,6 +125,23 @@ function Import-RuntimeConfiguration {
         throw "Automation Variable '$variableName' incompleta. Chiavi mancanti: $($missing -join ', ')."
     }
 
+    $optionalBooleanNames = @(
+        'AllowValueTakeover'
+        'ClearManagedValuesForOutOfScopeDevices'
+    )
+    foreach ($name in $optionalBooleanNames) {
+        $property = if ($config -is [System.Collections.IDictionary]) {
+            if ($config.Contains($name)) { $config[$name] }
+        }
+        else {
+            $configProperty = $config.PSObject.Properties[$name]
+            if ($null -ne $configProperty) { $configProperty.Value }
+        }
+        if ($null -ne $property) {
+            Set-Variable -Name $name -Value (ConvertTo-Bool -Value $property -Name $name) -Scope Script
+            $imported++
+        }
+    }
     $attributeVariables = [ordered]@{
         ExtensionAttributeName = 'BitLockerExtensionAttributeName'
         EncryptedValue         = 'BitLockerExtensionAttributeEncryptedValue'
@@ -139,6 +163,7 @@ function Import-RuntimeConfiguration {
         Set-Variable -Name $entry.Key -Value $value -Scope Script
         $imported++
     }
+    Write-Log "Opzioni di sicurezza extension: AllowValueTakeover=$AllowValueTakeover; ClearManagedValuesForOutOfScopeDevices=$ClearManagedValuesForOutOfScopeDevices."
     Write-Log "Caricati $imported parametri dalle Automation Variables del runbook."
 }
 

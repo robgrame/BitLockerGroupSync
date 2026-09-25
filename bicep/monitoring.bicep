@@ -263,7 +263,7 @@ AzureDiagnostics
 | where Category == "JobStreams"
 | where RunbookName_s == "{0}"
 | where ResultDescription contains "[EXTENSION_ATTRIBUTE_HEALTH]"
-| extend Payload = parse_json(extract(@"(\{.*\})", 1, ResultDescription))
+| extend Payload = parse_json(extract(@"(\{{.*\}})", 1, ResultDescription))
 | where toint(Payload.errors) == 0 and coalesce(tobool(Payload.aborted), false) == false
 | summarize Completed = count()
 ''', extensionAttributeRunbookName)

@@ -117,7 +117,7 @@
     configurata nel file .bicepparam.
 
 .NOTES
-    Version: 1.6.6
+    Version: 1.6.7
 
     Per visualizzare la guida completa:
         Get-Help .\deploy.ps1 -Full
@@ -1066,7 +1066,7 @@ else {
     @{
         solution  = 'BitLockerGroupSync'
         managedBy = 'deploy.ps1'
-        version   = '1.6.6'
+        version   = '1.6.7'
     }
 }
 $configuredScheduleIntervalHours = if ($null -ne $parameterValues.scheduleIntervalHours) {

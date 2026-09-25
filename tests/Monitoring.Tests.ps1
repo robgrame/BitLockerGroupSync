@@ -112,6 +112,7 @@ Describe 'Modulo monitoring.bicep' {
     }
     It 'Considera riusciti solo i cicli extension senza errori e non interrotti' {
         $script:text | Should -Match 'ResultDescription contains "\[EXTENSION_ATTRIBUTE_HEALTH\]"'
+        $script:text | Should -Match 'extract\(@"\(\\\{\{\.\*\\\}\}\)"'
         $script:text | Should -Match 'toint\(Payload\.errors\) == 0'
         $script:text | Should -Match 'coalesce\(tobool\(Payload\.aborted\), false\) == false'
     }

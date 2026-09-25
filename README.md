@@ -4,7 +4,7 @@
 
 ### Dynamic Entra ID security groups driven by Intune BitLocker encryption state & recovery-key escrow
 
-**Versione soluzione: 1.5.4**
+**Versione soluzione: 1.6.5**
 
 [![PowerShell](https://img.shields.io/badge/PowerShell-7.2-5391FE?style=for-the-badge&logo=powershell&logoColor=white)](https://learn.microsoft.com/powershell/)
 [![Bicep](https://img.shields.io/badge/Bicep-IaC-00BCF2?style=for-the-badge&logo=microsoftazure&logoColor=white)](https://learn.microsoft.com/azure/azure-resource-manager/bicep/)
@@ -403,10 +403,17 @@ flowchart LR
   e, se abilitata la Logic App Teams (o valorizzato `alertActionWebhookUrl`), a un **webhook**.
 - **Workbook** *Nimbus.BitLockerGroupSync - Monitoring*: dashboard con trend degli esiti job,
   ultimi job, errori recenti, righe di riepilogo e dettaglio dei device aggiunti ai gruppi.
-- **Workbook** *BitLocker Extension Attribute - Operations Overview v2*: nuova dashboard
+- **Workbook** *BitLocker Extension Attribute - Operations Overview v3*: dashboard
   graph-first dedicata al secondo runbook, con KPI dell'ultimo ciclo, trend di valutati /
   conformi / aggiornati, affidabilità dei job, distribuzione `enc` / `notenc`, anomalie,
-  device aggiornati più frequentemente e drill-down diagnostico.
+  device aggiornati più frequentemente, cicli interrotti, device saltati e drill-down diagnostico.
+- Il runbook extension attribute registra nel vero stream **Error** ogni update Graph
+  definitivamente fallito, include nel riepilogo gli status HTTP e alcuni esempi diagnostici,
+  e ritenta con backoff gli errori transitori senza mascherare errori di autorizzazione.
+  Gli errori operativi Graph su GET/POST/PATCH non interrompono il flusso: il job termina
+  `Completed`, ma il ciclo viene marcato con errori e resta visibile negli stream Error/Output,
+  negli alert e nel workbook. Gli errori di configurazione o sicurezza continuano a produrre
+  un job `Failed`.
 
 La vista **Device aggiunti ai gruppi** mostra data/ora, gruppo, nome device, object ID e job.
 I dati sono generati solo per aggiunte effettivamente riuscite e rispettano il filtro temporale

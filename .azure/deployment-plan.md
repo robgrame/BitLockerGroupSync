@@ -209,7 +209,7 @@ Azure Resource Manager inventory and official Microsoft service-limit documentat
 - **First extension job:** `Completed`; 4 updates, 0 conflicts, 0 errors
 - **Entra verification:** 4 devices mapped (`enc`=3, `notenc`=1), 0 foreign values
 - **CI:** build 1.3.2 passed in
-  `https://github.com/robgrame/Nimbus.BitLockerGroupSync/actions/runs/35403350569`
+  `https://github.com/robgrame/BitLockerGroupSync/actions/runs/35403350569`
 - **Live Azure RBAC:** no Azure control/data-plane role assignment is required
   for this Graph-only managed identity; UAMI attachment and Graph app roles were
   verified live

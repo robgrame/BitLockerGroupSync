@@ -13,7 +13,7 @@
     vengono ignorati e contabilizzati nel riepilogo.
 
 .NOTES
-    Version: 1.5.1
+    Version: 1.6.5
 
     Permessi Graph application richiesti:
       - DeviceManagementManagedDevices.Read.All
@@ -35,6 +35,18 @@ $VerbosePreference = 'Continue'
 $script:GraphBase = 'https://graph.microsoft.com/v1.0'
 $script:UpdateErrors = 0
 $script:UpdatedDevices = 0
+$script:UpdateErrorDetails = [System.Collections.Generic.List[object]]::new()
+$script:UpdateErrorStatusCounts = @{}
+$script:UpdateAbortReason = ''
+$script:GraphOperationErrors = 0
+$script:SafetyErrors = 0
+$script:CycleEventWritten = $false
+$script:CycleEvaluated = 0
+$script:CycleCompliant = 0
+$script:CycleRequested = 0
+$script:CycleConflicts = 0
+$script:CycleUnresolved = 0
+$script:CycleUnknownEncryptionState = 0
 $script:ExtensionAttributeName = 'extensionAttribute10'
 $script:EncryptedValue = 'enc'
 $script:NotEncryptedValue = 'notenc'
@@ -54,8 +66,12 @@ function Write-Log {
         [ValidateSet('INFO', 'WARN', 'ERROR', 'OK')][string]$Level = 'INFO'
     )
 
-    $timestamp = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
-    Write-Verbose ("[{0}] [{1}] {2}" -f $timestamp, $Level, $Message)
+    $entry = "[{0}] [{1}] {2}" -f (Get-Date).ToString('yyyy-MM-dd HH:mm:ss'), $Level, $Message
+    switch ($Level) {
+        'ERROR' { Write-Error -Message $entry -ErrorAction Continue }
+        'WARN' { Write-Warning $entry }
+        default { Write-Verbose $entry }
+    }
 }
 
 function ConvertTo-Bool {
@@ -70,6 +86,82 @@ function ConvertTo-Bool {
         { $_ -in @('false', '0', 'no', 'n', 'off', '') } { return $false }
         default { throw "Automation Variable 'BitLockerSyncRuntimeConfig' contiene un valore booleano non valido per '$Name': '$Value'." }
     }
+}
+
+function Get-GraphErrorStatusCode {
+    param([Parameter(Mandatory)][System.Management.Automation.ErrorRecord]$ErrorRecord)
+
+    $exception = $ErrorRecord.Exception
+    while ($null -ne $exception) {
+        $sources = [System.Collections.Generic.List[object]]::new()
+        $sources.Add($exception)
+        $responseProperty = $exception.PSObject.Properties['Response']
+        if ($null -ne $responseProperty -and $null -ne $responseProperty.Value) {
+            $sources.Add($responseProperty.Value)
+        }
+
+        foreach ($source in $sources) {
+            $statusProperty = $source.PSObject.Properties['StatusCode']
+            if ($null -eq $statusProperty -or $null -eq $statusProperty.Value) { continue }
+            try { return [int]$statusProperty.Value } catch { $null = $_ }
+        }
+
+        $match = [regex]::Match(
+            [string]$exception.Message,
+            '(?i)(?:response\s+)?status(?:\s+code)?[^0-9]{0,80}(?<status>[1-5]\d{2})(?!\d)'
+        )
+        if ($match.Success) { return [int]$match.Groups['status'].Value }
+        $exception = $exception.InnerException
+    }
+    return $null
+}
+
+function Test-GraphTransientError {
+    param(
+        [Parameter(Mandatory)][System.Management.Automation.ErrorRecord]$ErrorRecord,
+        [AllowNull()][Nullable[int]]$StatusCode
+    )
+
+    if ($null -ne $StatusCode) {
+        return $StatusCode -in @(408, 423, 425, 429) -or $StatusCode -ge 500
+    }
+
+    $exception = $ErrorRecord.Exception
+    while ($null -ne $exception) {
+        if ($exception -is [System.TimeoutException] -or
+            $exception -is [System.Net.Http.HttpRequestException] -or
+            $exception -is [System.Threading.Tasks.TaskCanceledException] -or
+            $exception -is [System.Net.WebException]) {
+            return $true
+        }
+        $exception = $exception.InnerException
+    }
+    return $false
+}
+
+function Get-GraphRetryDelay {
+    param(
+        [Parameter(Mandatory)][System.Management.Automation.ErrorRecord]$ErrorRecord,
+        [Parameter(Mandatory)][ValidateRange(1, 10)][int]$Attempt
+    )
+
+    $retryAfter = 0
+    try {
+        $retryAfter = [int]$ErrorRecord.Exception.Response.Headers.RetryAfter.Delta.TotalSeconds
+    }
+    catch { $retryAfter = 0 }
+
+    if ($retryAfter -le 0) {
+        try {
+            $rawRetryAfter = $ErrorRecord.Exception.Response.Headers.GetValues('Retry-After') | Select-Object -First 1
+            $retryAfter = [int]$rawRetryAfter
+        }
+        catch { $retryAfter = 0 }
+    }
+    if ($retryAfter -le 0) {
+        $retryAfter = [math]::Pow(2, $Attempt)
+    }
+    return [math]::Min(30, $retryAfter)
 }
 
 function Import-RuntimeConfiguration {
@@ -248,7 +340,8 @@ function Invoke-GraphApi {
 
     do {
         $attempt = 0
-        while ($true) {
+        $maxAttempts = 5
+        while ($attempt -lt $maxAttempts) {
             $attempt++
             try {
                 $parameters = @{
@@ -265,18 +358,18 @@ function Invoke-GraphApi {
                 break
             }
             catch {
-                $status = $null
-                try { $status = [int]$_.Exception.Response.StatusCode } catch { $status = $null }
-                if (($status -eq 429 -or $status -ge 500) -and $attempt -le 5) {
-                    $retryAfter = 0
-                    try { $retryAfter = [int]$_.Exception.Response.Headers.RetryAfter.Delta.TotalSeconds } catch { $retryAfter = 0 }
-                    if ($retryAfter -le 0) {
-                        $retryAfter = [math]::Min(60, [math]::Pow(2, $attempt))
-                    }
-                    Write-Log "Errore Graph transitorio ($status). Retry tra $retryAfter s (tentativo $attempt)." 'WARN'
+                $status = Get-GraphErrorStatusCode -ErrorRecord $_
+                $isTransient = Test-GraphTransientError -ErrorRecord $_ -StatusCode $status
+                if ($isTransient -and $attempt -lt $maxAttempts) {
+                    $retryAfter = Get-GraphRetryDelay -ErrorRecord $_ -Attempt $attempt
+                    $statusLabel = if ($null -eq $status) { $_.Exception.GetType().Name } else { "HTTP $status" }
+                    Write-Log "Errore Graph transitorio durante $Method $next ($statusLabel). Retry tra $retryAfter s (tentativo $attempt/$maxAttempts)." 'WARN'
                     Start-Sleep -Seconds $retryAfter
                     continue
                 }
+                $_.Exception.Data['BitLockerGroupSync.GraphOperation'] = $true
+                $_.Exception.Data['BitLockerGroupSync.GraphMethod'] = $Method
+                $_.Exception.Data['BitLockerGroupSync.GraphUri'] = $next
                 throw
             }
         }
@@ -302,6 +395,193 @@ function Invoke-GraphApi {
     return $results.ToArray()
 }
 
+function Get-BatchRetryDelay {
+    param(
+        [Parameter(Mandatory)][object]$Result,
+        [Parameter(Mandatory)][ValidateRange(1, 10)][int]$Attempt
+    )
+
+    $delaySeconds = [math]::Min(30, [math]::Pow(2, $Attempt))
+    $headersProperty = $Result.PSObject.Properties['headers']
+    if ($null -eq $headersProperty -or $null -eq $headersProperty.Value) {
+        return $delaySeconds
+    }
+
+    $headers = $headersProperty.Value
+    $retryAfter = $null
+    $retryAfterMilliseconds = $null
+    if ($headers -is [System.Collections.IDictionary]) {
+        foreach ($key in $headers.Keys) {
+            if ([string]$key -ieq 'Retry-After') { $retryAfter = $headers[$key] }
+            if ([string]$key -ieq 'x-ms-retry-after-ms') { $retryAfterMilliseconds = $headers[$key] }
+        }
+    }
+    else {
+        foreach ($property in $headers.PSObject.Properties) {
+            if ($property.Name -ieq 'Retry-After') { $retryAfter = $property.Value }
+            if ($property.Name -ieq 'x-ms-retry-after-ms') { $retryAfterMilliseconds = $property.Value }
+        }
+    }
+
+    $parsed = 0
+    if ([int]::TryParse([string]$retryAfterMilliseconds, [ref]$parsed) -and $parsed -gt 0) {
+        return [math]::Min(30, [math]::Ceiling($parsed / 1000))
+    }
+    if ([int]::TryParse([string]$retryAfter, [ref]$parsed) -and $parsed -gt 0) {
+        return [math]::Min(30, $parsed)
+    }
+    return $delaySeconds
+}
+
+function Register-DeviceUpdateError {
+    param(
+        [Parameter(Mandatory)][object]$Request,
+        [Parameter(Mandatory)][object]$Result
+    )
+
+    $status = [int]$Result.status
+    $statusKey = [string]$status
+    if (-not $script:UpdateErrorStatusCounts.ContainsKey($statusKey)) {
+        $script:UpdateErrorStatusCounts[$statusKey] = 0
+    }
+    $script:UpdateErrorStatusCounts[$statusKey]++
+
+    $errorCode = ''
+    $errorMessage = ''
+    $bodyProperty = $Result.PSObject.Properties['body']
+    if ($null -ne $bodyProperty -and $null -ne $bodyProperty.Value) {
+        $body = $bodyProperty.Value
+        $graphError = if ($body -is [System.Collections.IDictionary]) {
+            if ($body.Contains('error')) { $body['error'] }
+        }
+        else {
+            $errorProperty = $body.PSObject.Properties['error']
+            if ($null -ne $errorProperty) { $errorProperty.Value }
+        }
+
+        if ($null -ne $graphError) {
+            if ($graphError -is [System.Collections.IDictionary]) {
+                if ($graphError.Contains('code')) { $errorCode = [string]$graphError['code'] }
+                if ($graphError.Contains('message')) { $errorMessage = [string]$graphError['message'] }
+            }
+            else {
+                $codeProperty = $graphError.PSObject.Properties['code']
+                $messageProperty = $graphError.PSObject.Properties['message']
+                if ($null -ne $codeProperty) { $errorCode = [string]$codeProperty.Value }
+                if ($null -ne $messageProperty) { $errorMessage = [string]$messageProperty.Value }
+            }
+        }
+        elseif ($body -is [string]) {
+            $errorMessage = [string]$body
+        }
+    }
+
+    $detail = [ordered]@{
+        deviceName = [string]$Request.deviceName
+        deviceId = [string]$Request.deviceId
+        objectId = [string]$Request.objectId
+        status = $status
+        code = $errorCode
+        message = $errorMessage
+        guidance = if ($status -eq 403 -and $errorCode -eq 'Authorization_RequestDenied') {
+            "Verificare l'application permission Microsoft Graph Device.ReadWrite.All e il relativo admin consent sull'identita usata dal job."
+        }
+        else {
+            ''
+        }
+    }
+    $script:UpdateErrorDetails.Add([pscustomobject]$detail)
+    $script:UpdateErrors++
+
+    Write-Log ("[EXTENSION_ATTRIBUTE_ERROR] {0}" -f ($detail | ConvertTo-Json -Compress)) 'ERROR'
+}
+
+function Write-ExtensionCycleEvent {
+    param(
+        [Parameter(Mandatory)][int]$Evaluated,
+        [Parameter(Mandatory)][int]$Compliant,
+        [Parameter(Mandatory)][int]$Requested,
+        [Parameter(Mandatory)][int]$Conflicts,
+        [Parameter(Mandatory)][int]$Unresolved,
+        [Parameter(Mandatory)][int]$UnknownEncryptionState
+    )
+
+    $aborted = -not [string]::IsNullOrWhiteSpace($script:UpdateAbortReason)
+    $totalErrors = $script:UpdateErrors + $script:GraphOperationErrors + $script:SafetyErrors
+    $cycleEvent = [ordered]@{
+        attribute = $ExtensionAttributeName
+        evaluated = $Evaluated
+        compliant = $Compliant
+        requested = $Requested
+        updated = $script:UpdatedDevices
+        conflicts = $Conflicts
+        unresolved = $Unresolved
+        unknownEncryptionState = $UnknownEncryptionState
+        errors = $totalErrors
+        errorStatusCounts = $script:UpdateErrorStatusCounts
+        errorSamples = @($script:UpdateErrorDetails | Select-Object -First 5)
+        aborted = $aborted
+        skipped = [math]::Max(0, $Requested - $script:UpdatedDevices - $script:UpdateErrors)
+    } | ConvertTo-Json -Compress
+    $script:CycleEventWritten = $true
+    Write-Output "[EXTENSION_ATTRIBUTE_CYCLE] $cycleEvent"
+    $healthEvent = [ordered]@{
+        aborted = $aborted
+        errors = $totalErrors
+        evaluated = $Evaluated
+        updated = $script:UpdatedDevices
+        compliant = $Compliant
+    } | ConvertTo-Json -Compress
+    Write-Output "[EXTENSION_ATTRIBUTE_HEALTH] $healthEvent"
+}
+
+function Get-OutOfScopeClearRequest {
+    param(
+        [Parameter(Mandatory)][AllowEmptyCollection()][object[]]$EntraDevices,
+        [Parameter(Mandatory)][AllowEmptyCollection()][System.Collections.Generic.HashSet[string]]$AuthoritativeDeviceIds,
+        [Parameter(Mandatory)][bool]$CleanupSafe
+    )
+
+    if (-not $CleanupSafe) {
+        return [pscustomobject]@{
+            Requests = @()
+            BlockReason = 'L inventario Intune non e sufficientemente completo per una pulizia sicura.'
+        }
+    }
+
+    $requests = [System.Collections.Generic.List[object]]::new()
+    foreach ($entraDevice in $EntraDevices) {
+        $deviceId = [string]$entraDevice.deviceId
+        if ([string]::IsNullOrWhiteSpace($deviceId) -or $AuthoritativeDeviceIds.Contains($deviceId)) { continue }
+        if ($null -eq $entraDevice.extensionAttributes) { continue }
+
+        $attributeProperty = $entraDevice.extensionAttributes.PSObject.Properties[$ExtensionAttributeName]
+        $currentValue = if ($null -ne $attributeProperty) { [string]$attributeProperty.Value } else { '' }
+        if ($currentValue -notin @($EncryptedValue, $NotEncryptedValue)) { continue }
+
+        $requests.Add([pscustomobject]@{
+                deviceName = [string]$entraDevice.displayName
+                deviceId = $deviceId
+                objectId = [string]$entraDevice.id
+                currentValue = $currentValue
+                desiredValue = ''
+            })
+    }
+
+    $maxClearsPerCycle = [math]::Max(1, [math]::Ceiling($AuthoritativeDeviceIds.Count * 0.25))
+    if ($requests.Count -gt $maxClearsPerCycle) {
+        return [pscustomobject]@{
+            Requests = @()
+            BlockReason = "Pulizia bloccata dal limite di sicurezza: candidati=$($requests.Count), massimoPerCiclo=$maxClearsPerCycle, inventarioAutorevole=$($AuthoritativeDeviceIds.Count)."
+        }
+    }
+
+    return [pscustomobject]@{
+        Requests = $requests.ToArray()
+        BlockReason = ''
+    }
+}
+
 function Invoke-DeviceUpdateBatch {
     param([Parameter()][AllowEmptyCollection()][object[]]$Requests = @())
 
@@ -315,7 +595,8 @@ function Invoke-DeviceUpdateBatch {
             $pending["$requestNumber"] = $request
         }
 
-        for ($attempt = 1; $attempt -le 4; $attempt++) {
+        $maxAttempts = 4
+        for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
             $batchRequests = foreach ($id in $pending.Keys) {
                 $request = $pending[$id]
                 @{
@@ -336,14 +617,106 @@ function Invoke-DeviceUpdateBatch {
                 -Method POST `
                 -Body @{ requests = @($batchRequests) })
 
-            if ($response.Count -eq 0 -or $null -eq $response[0].responses) {
-                throw 'Microsoft Graph non ha restituito una risposta valida per il batch di aggiornamento device.'
+            $responsesProperty = if ($response.Count -gt 0 -and $null -ne $response[0]) {
+                $response[0].PSObject.Properties['responses']
+            }
+            else {
+                $null
+            }
+            $batchResponses = if ($null -ne $responsesProperty -and $null -ne $responsesProperty.Value) {
+                @($responsesProperty.Value)
+            }
+            else {
+                @()
+            }
+            $expectedIds = @($pending.Keys | ForEach-Object { [string]$_ })
+            $actualIds = @(
+                $batchResponses | ForEach-Object {
+                    $idProperty = $_.PSObject.Properties['id']
+                    if ($null -ne $idProperty -and $null -ne $idProperty.Value) {
+                        [string]$idProperty.Value
+                    }
+                    else {
+                        ''
+                    }
+                }
+            )
+            $uniqueActualIds = @($actualIds | Sort-Object -Unique)
+            $missingIds = @($expectedIds | Where-Object { $_ -notin $uniqueActualIds })
+            $unknownIds = @($uniqueActualIds | Where-Object { [string]::IsNullOrWhiteSpace($_) -or $_ -notin $expectedIds })
+            $duplicateIds = @(
+                $actualIds |
+                    Group-Object |
+                    Where-Object Count -gt 1 |
+                    ForEach-Object Name
+            )
+            if ($missingIds.Count -gt 0 -or $unknownIds.Count -gt 0 -or $duplicateIds.Count -gt 0) {
+                $integrityMessage = "Risposta Graph batch incompleta o incoerente: attese=$($expectedIds.Count), ricevute=$($actualIds.Count), mancanti=$($missingIds -join ','), sconosciute=$($unknownIds -join ','), duplicate=$($duplicateIds -join ',')."
+                foreach ($id in $expectedIds) {
+                    Register-DeviceUpdateError `
+                        -Request $pending[$id] `
+                        -Result ([pscustomobject]@{
+                            status = 0
+                            body = @{
+                                error = @{
+                                    code = 'IncompleteBatchResponse'
+                                    message = $integrityMessage
+                                }
+                            }
+                        })
+                }
+                $script:UpdateAbortReason = "$integrityMessage Il ciclo viene interrotto e verra riconciliato dalla prossima esecuzione."
+                Write-Log $script:UpdateAbortReason 'ERROR'
+                return
             }
 
             $retry = [ordered]@{}
-            foreach ($result in $response[0].responses) {
+            $retryDelaySeconds = [math]::Min(30, [math]::Pow(2, $attempt))
+            $authorizationFailures = [System.Collections.Generic.List[object]]::new()
+            foreach ($result in $batchResponses) {
                 $request = $pending["$($result.id)"]
-                if ($result.status -lt 400) {
+                $statusProperty = $result.PSObject.Properties['status']
+                $status = 0
+                $hasValidStatus = $null -ne $statusProperty -and
+                    $null -ne $statusProperty.Value -and
+                    [int]::TryParse([string]$statusProperty.Value, [ref]$status) -and
+                    $status -ge 100 -and
+                    $status -le 599
+                if (-not $hasValidStatus) {
+                    Register-DeviceUpdateError `
+                        -Request $request `
+                        -Result ([pscustomobject]@{
+                            status = 0
+                            body = @{
+                                error = @{
+                                    code = 'InvalidBatchStatus'
+                                    message = "La risposta Graph per la richiesta $($result.id) non contiene uno status HTTP valido."
+                                }
+                            }
+                        })
+                    $script:UpdateAbortReason = 'Risposta Graph batch con status HTTP mancante o non valido. Il ciclo viene interrotto e verra riconciliato dalla prossima esecuzione.'
+                    Write-Log $script:UpdateAbortReason 'ERROR'
+                    return
+                }
+
+                if ($status -ge 300 -and $status -le 399) {
+                    Register-DeviceUpdateError `
+                        -Request $request `
+                        -Result ([pscustomobject]@{
+                            status = $status
+                            body = @{
+                                error = @{
+                                    code = 'InvalidBatchStatus'
+                                    message = "Microsoft Graph ha restituito uno status redirect HTTP $status non valido per un update batch."
+                                }
+                            }
+                        })
+                    $script:UpdateAbortReason = "Risposta Graph batch con status redirect HTTP $status. Il ciclo viene interrotto e verra riconciliato dalla prossima esecuzione."
+                    Write-Log $script:UpdateAbortReason 'ERROR'
+                    return
+                }
+
+                if ($status -ge 200 -and $status -le 299) {
                     $script:UpdatedDevices++
                     $updateEvent = [ordered]@{
                         deviceName = $request.deviceName
@@ -357,19 +730,42 @@ function Invoke-DeviceUpdateBatch {
                     continue
                 }
 
-                if (($result.status -eq 429 -or $result.status -ge 500) -and $attempt -lt 4) {
+                $isTransient = $status -in @(408, 423, 425, 429) -or $status -ge 500
+                if ($isTransient -and $attempt -lt $maxAttempts) {
                     $retry["$($result.id)"] = $request
+                    $retryDelaySeconds = [math]::Max(
+                        $retryDelaySeconds,
+                        (Get-BatchRetryDelay -Result $result -Attempt $attempt)
+                    )
                     continue
                 }
 
-                $detail = try { $result.body | ConvertTo-Json -Depth 5 -Compress } catch { '' }
-                Write-Log "Aggiornamento device '$($request.deviceName)' fallito con status $($result.status): $detail" 'ERROR'
-                $script:UpdateErrors++
+                Register-DeviceUpdateError -Request $request -Result $result
+                if ($status -in @(401, 403)) {
+                    $authorizationFailures.Add($result)
+                }
+            }
+
+            if ($script:UpdatedDevices -eq 0 -and
+                $pending.Count -gt 1 -and
+                $authorizationFailures.Count -eq $pending.Count) {
+                $statuses = @($authorizationFailures | ForEach-Object { [int]$_.status } | Sort-Object -Unique)
+                $statusSummary = ($statuses | ForEach-Object { "HTTP $_" }) -join '/'
+                $guidance = if ($statuses -contains 403) {
+                    "Verificare che l'identita usata dal job disponga dell'application permission Microsoft Graph Device.ReadWrite.All con admin consent."
+                }
+                else {
+                    "Verificare configurazione e validita dell'identita usata dal job."
+                }
+                $script:UpdateAbortReason = "Microsoft Graph ha rifiutato tutti i $($pending.Count) update del batch corrente con $statusSummary. $guidance"
+                Write-Log $script:UpdateAbortReason 'ERROR'
+                return
             }
 
             if ($retry.Count -eq 0) { break }
             $pending = $retry
-            Start-Sleep -Seconds ([math]::Min(30, [math]::Pow(2, $attempt)))
+            Write-Log "$($pending.Count) update device temporaneamente falliti; retry tra $retryDelaySeconds s (tentativo $attempt/$maxAttempts)." 'WARN'
+            Start-Sleep -Seconds $retryDelaySeconds
         }
     }
 }
@@ -389,12 +785,16 @@ function Get-ManagedDeviceState {
         -All
 
     $state = @{}
+    $authoritativeDeviceIds = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
     $unknownEncryptionState = 0
+    $uncorrelatedDevices = 0
     foreach ($device in $devices) {
         $deviceId = [string]$device.azureADDeviceId
         if ([string]::IsNullOrWhiteSpace($deviceId) -or $deviceId -eq '00000000-0000-0000-0000-000000000000') {
+            $uncorrelatedDevices++
             continue
         }
+        [void]$authoritativeDeviceIds.Add($deviceId)
         if ($staleStates -contains [string]$device.managementState) { continue }
         if ($null -eq $device.isEncrypted) {
             $unknownEncryptionState++
@@ -409,6 +809,9 @@ function Get-ManagedDeviceState {
 
     return [pscustomobject]@{
         Devices = $state
+        AuthoritativeDeviceIds = $authoritativeDeviceIds
+        CleanupSafe = $uncorrelatedDevices -eq 0 -and $authoritativeDeviceIds.Count -gt 0
+        UncorrelatedDevices = $uncorrelatedDevices
         UnknownEncryptionState = $unknownEncryptionState
     }
 }
@@ -449,9 +852,14 @@ try {
 
     $managedState = Get-ManagedDeviceState -OperatingSystem $TargetOperatingSystem
     $managedDevices = $managedState.Devices
+    $script:CycleEvaluated = $managedDevices.Count
+    $script:CycleUnknownEncryptionState = $managedState.UnknownEncryptionState
     Write-Log "Device Intune validi con stato cifratura noto: $($managedDevices.Count)."
     if ($managedState.UnknownEncryptionState -gt 0) {
         Write-Log "$($managedState.UnknownEncryptionState) device con isEncrypted nullo sono stati ignorati." 'WARN'
+    }
+    if ($managedState.UncorrelatedDevices -gt 0) {
+        Write-Log "$($managedState.UncorrelatedDevices) device Intune senza azureADDeviceId valido non possono essere correlati a Entra." 'WARN'
     }
 
     Write-Log "Recupero device Entra e valore corrente di $ExtensionAttributeName..."
@@ -518,22 +926,18 @@ try {
     }
 
     if ($ClearManagedValuesForOutOfScopeDevices) {
-        foreach ($entraDevice in $entraDevices) {
-            $deviceId = [string]$entraDevice.deviceId
-            if ([string]::IsNullOrWhiteSpace($deviceId) -or $managedDevices.ContainsKey($deviceId)) { continue }
-            if ($null -eq $entraDevice.extensionAttributes) { continue }
-
-            $attributeProperty = $entraDevice.extensionAttributes.PSObject.Properties[$ExtensionAttributeName]
-            $currentValue = if ($null -ne $attributeProperty) { [string]$attributeProperty.Value } else { '' }
-            if ($currentValue -notin @($EncryptedValue, $NotEncryptedValue)) { continue }
-
-            $updates.Add([pscustomobject]@{
-                    deviceName = [string]$entraDevice.displayName
-                    deviceId = $deviceId
-                    objectId = [string]$entraDevice.id
-                    currentValue = $currentValue
-                    desiredValue = ''
-                })
+        $cleanup = Get-OutOfScopeClearRequest `
+            -EntraDevices $entraDevices `
+            -AuthoritativeDeviceIds $managedState.AuthoritativeDeviceIds `
+            -CleanupSafe $managedState.CleanupSafe
+        if (-not [string]::IsNullOrWhiteSpace($cleanup.BlockReason)) {
+            $script:SafetyErrors++
+            Write-Log "[EXTENSION_ATTRIBUTE_SAFETY] $($cleanup.BlockReason)" 'ERROR'
+        }
+        else {
+            foreach ($request in $cleanup.Requests) {
+                $updates.Add($request)
+            }
         }
     }
 
@@ -545,8 +949,13 @@ try {
             $conflicts.Count,
             $unresolved,
             $managedState.UnknownEncryptionState)
+    $script:CycleCompliant = $alreadyCompliant
+    $script:CycleRequested = $updates.Count
+    $script:CycleConflicts = $conflicts.Count
+    $script:CycleUnresolved = $unresolved
 
     if ($conflicts.Count -gt 0) {
+        $script:UpdateAbortReason = "$($conflicts.Count) device contengono valori non gestiti in $ExtensionAttributeName."
         $conflictEvent = [ordered]@{
             attribute = $ExtensionAttributeName
             evaluated = $managedDevices.Count
@@ -563,6 +972,13 @@ try {
                     $ExtensionAttributeName,
                     $conflict.currentValue) 'ERROR'
         }
+        Write-ExtensionCycleEvent `
+            -Evaluated $managedDevices.Count `
+            -Compliant $alreadyCompliant `
+            -Requested $updates.Count `
+            -Conflicts $conflicts.Count `
+            -Unresolved $unresolved `
+            -UnknownEncryptionState $managedState.UnknownEncryptionState
         throw "$($conflicts.Count) device contengono valori non gestiti in $ExtensionAttributeName. Nessuna modifica applicata; abilitare esplicitamente AllowValueTakeover dopo aver verificato l'ownership dell'attributo."
     }
 
@@ -582,28 +998,77 @@ try {
         }
     }
 
-    $cycleEvent = [ordered]@{
-        attribute = $ExtensionAttributeName
-        evaluated = $managedDevices.Count
-        compliant = $alreadyCompliant
-        requested = $updates.Count
-        updated = $script:UpdatedDevices
-        conflicts = $conflicts.Count
-        unresolved = $unresolved
-        unknownEncryptionState = $managedState.UnknownEncryptionState
-        errors = $script:UpdateErrors
-    } | ConvertTo-Json -Compress
-    Write-Log "[EXTENSION_ATTRIBUTE_CYCLE] $cycleEvent" 'OK'
+    Write-ExtensionCycleEvent `
+        -Evaluated $managedDevices.Count `
+        -Compliant $alreadyCompliant `
+        -Requested $updates.Count `
+        -Conflicts $conflicts.Count `
+        -Unresolved $unresolved `
+        -UnknownEncryptionState $managedState.UnknownEncryptionState
 
     if ($script:UpdateErrors -gt 0) {
-        throw "Sincronizzazione completata con $($script:UpdateErrors) errori: alcuni device non sono stati aggiornati."
+        $statusSummary = @(
+            $script:UpdateErrorStatusCounts.GetEnumerator() |
+                Sort-Object Name |
+                ForEach-Object {
+                    if ($_.Name -eq '0') { "GraphResponse=$($_.Value)" } else { "HTTP $($_.Name)=$($_.Value)" }
+                }
+        ) -join ', '
+        $sampleSummary = @(
+            $script:UpdateErrorDetails |
+                Select-Object -First 3 |
+                ForEach-Object {
+                    $reason = if (-not [string]::IsNullOrWhiteSpace($_.code)) {
+                        "$($_.code): $($_.message)"
+                    }
+                    elseif (-not [string]::IsNullOrWhiteSpace($_.message)) {
+                        $_.message
+                    }
+                    else {
+                        'nessun dettaglio Graph'
+                    }
+                    $guidance = if ([string]::IsNullOrWhiteSpace($_.guidance)) { '' } else { " $($_.guidance)" }
+                    "$($_.deviceName) [HTTP $($_.status)] $reason$guidance"
+                }
+        ) -join ' | '
+        $abortSummary = if ([string]::IsNullOrWhiteSpace($script:UpdateAbortReason)) {
+            ''
+        }
+        else {
+            " $script:UpdateAbortReason"
+        }
+        Write-Log "Sincronizzazione completata con $($script:UpdateErrors) errori gestiti ($statusSummary). Esempi: $sampleSummary.$abortSummary" 'ERROR'
+        Write-Log 'Il job prosegue come Completed; verificare lo stream Error e il workbook prima della prossima esecuzione.' 'WARN'
     }
     Write-Log '=== Extension attribute sync completata ===' 'OK'
 }
 catch {
-    Write-Log "ERRORE FATALE: $($_.Exception.Message)" 'ERROR'
-    Write-Log $_.ScriptStackTrace 'ERROR'
-    throw
+    $isHandledGraphFailure = $_.Exception.Data.Contains('BitLockerGroupSync.GraphOperation')
+    if ($isHandledGraphFailure) {
+        $script:GraphOperationErrors++
+        $method = [string]$_.Exception.Data['BitLockerGroupSync.GraphMethod']
+        $uri = [string]$_.Exception.Data['BitLockerGroupSync.GraphUri']
+        $status = Get-GraphErrorStatusCode -ErrorRecord $_
+        $statusLabel = if ($null -eq $status) { 'status non disponibile' } else { "HTTP $status" }
+        $script:UpdateAbortReason = "Operazione Graph $method non completata ($statusLabel). La sincronizzazione e stata interrotta in sicurezza senza applicare ulteriori modifiche."
+        Write-Log "[GRAPH_OPERATION_ERROR] method=$method uri=$uri status=$statusLabel message=$($_.Exception.Message)" 'ERROR'
+
+        if (-not $script:CycleEventWritten) {
+            Write-ExtensionCycleEvent `
+                -Evaluated $script:CycleEvaluated `
+                -Compliant $script:CycleCompliant `
+                -Requested $script:CycleRequested `
+                -Conflicts $script:CycleConflicts `
+                -Unresolved $script:CycleUnresolved `
+                -UnknownEncryptionState $script:CycleUnknownEncryptionState
+        }
+        Write-Log 'Errore Graph gestito: il job termina Completed con evidenza negli stream Error/Output e nel workbook.' 'WARN'
+    }
+    else {
+        Write-Log "ERRORE FATALE: $($_.Exception.Message)" 'ERROR'
+        Write-Log $_.ScriptStackTrace 'ERROR'
+        throw
+    }
 }
 finally {
     try { Disconnect-MgGraph -ErrorAction SilentlyContinue | Out-Null } catch { $null = $_ }

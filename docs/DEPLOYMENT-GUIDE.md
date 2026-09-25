@@ -545,7 +545,7 @@ Il job deve terminare `Completed` e i gruppi Entra devono contenere i device att
 Dopo il tempo di ingestion di Log Analytics, verificare:
 
 - esito job nel tempo;
-- il nuovo workbook **BitLocker Extension Attribute - Operations Overview v2**, creato
+- il nuovo workbook **BitLocker Extension Attribute - Operations Overview v3**, creato
   come risorsa separata senza sovrascrivere il workbook storico;
 - KPI dell'ultimo ciclo e trend di device valutati, conformi e aggiornati;
 - distribuzione degli aggiornamenti `enc` / `notenc`;

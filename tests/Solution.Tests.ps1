@@ -387,7 +387,8 @@ Describe 'Orchestrazione del deployment' {
         $script:deployText | Should -Match "'Microsoft\.Insights/workbooks'"
         $script:deployText | Should -Match '\$null -ne \$_.Tags'
         $script:deployText | Should -Match '\$_\.Tags\[''workbook''\] -eq ''extension-attribute'''
-        $script:deployText | Should -Match '\$_\.Properties\.displayName -eq ''BitLocker Extension Attribute - Operations Overview v2'''
+        $script:deployText | Should -Match 'BitLocker Extension Attribute - Operations Overview v2'
+        $script:deployText | Should -Match 'BitLocker Extension Attribute - Operations Overview v3'
         $script:deployText | Should -Match '\$_.Properties\.sourceId -eq \$WorkspaceResourceId'
         $script:deployText | Should -Match '\$deployExtensionAttributeRunbook -and \$deployLogAnalytics -and \$deployMonitoring -and \$deployWorkbook'
         $script:deployText | Should -Match '\$deployGroupSyncRunbook -and \$deployLogAnalytics -and \$deployMonitoring -and \$deployWorkbook'

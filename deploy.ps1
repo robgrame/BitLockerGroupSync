@@ -117,7 +117,7 @@
     configurata nel file .bicepparam.
 
 .NOTES
-    Version: 1.5.4
+    Version: 1.6.5
 
     Per visualizzare la guida completa:
         Get-Help .\deploy.ps1 -Full
@@ -803,8 +803,11 @@ function Remove-ExtensionAttributeWorkbookIfPresent {
             Where-Object {
                 $null -ne $_.Tags -and
                 $_.Tags['workbook'] -eq 'extension-attribute' -and
-                $_.Tags['workbookVersion'] -eq '2.0' -and
-                $_.Properties.displayName -eq 'BitLocker Extension Attribute - Operations Overview v2' -and
+                $_.Tags['workbookVersion'] -in @('2.0', '3.0') -and
+                $_.Properties.displayName -in @(
+                    'BitLocker Extension Attribute - Operations Overview v2',
+                    'BitLocker Extension Attribute - Operations Overview v3'
+                ) -and
                 $_.Properties.sourceId -eq $WorkspaceResourceId
             }
     )
@@ -1063,7 +1066,7 @@ else {
     @{
         solution  = 'BitLockerGroupSync'
         managedBy = 'deploy.ps1'
-        version   = '1.5.4'
+        version   = '1.6.5'
     }
 }
 $configuredScheduleIntervalHours = if ($null -ne $parameterValues.scheduleIntervalHours) {

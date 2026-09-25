@@ -8,7 +8,7 @@ BeforeAll {
     $script:monitoring = Join-Path $bicepDir 'monitoring.bicep'
     $script:teams = Join-Path $bicepDir 'teams-logicapp.bicep'
     $script:workbook = Join-Path $bicepDir 'workbooks\runbook-monitoring.workbook.json'
-    $script:extensionWorkbook = Join-Path $bicepDir 'workbooks\extension-attribute-monitoring-v2.workbook.json'
+    $script:extensionWorkbook = Join-Path $bicepDir 'workbooks\extension-attribute-monitoring-v3.workbook.json'
 }
 
 Describe 'File di monitoraggio presenti' {
@@ -16,7 +16,7 @@ Describe 'File di monitoraggio presenti' {
         @{ Name = 'monitoring.bicep'; Path = { $script:monitoring } }
         @{ Name = 'teams-logicapp.bicep'; Path = { $script:teams } }
         @{ Name = 'workbook JSON'; Path = { $script:workbook } }
-        @{ Name = 'extension attribute workbook v2 JSON'; Path = { $script:extensionWorkbook } }
+        @{ Name = 'extension attribute workbook v3 JSON'; Path = { $script:extensionWorkbook } }
     ) {
         Test-Path (& $Path) | Should -BeTrue
     }
@@ -103,18 +103,23 @@ Describe 'Modulo monitoring.bicep' {
     }
     It 'Crea una nuova versione separata del workbook extension attribute' {
         $script:text | Should -Match "param monitorExtensionAttributeRunbook bool"
-        $script:text | Should -Match "blkgm-extension-attribute-monitoring-v2"
-        $script:text | Should -Match "extension-attribute-monitoring-v2\.workbook\.json"
-        $script:text | Should -Match "BitLocker Extension Attribute - Operations Overview v2"
-        $script:text | Should -Match "version: '2\.0'"
+        $script:text | Should -Match "blkgm-extension-attribute-monitoring-v3"
+        $script:text | Should -Match "extension-attribute-monitoring-v3\.workbook\.json"
+        $script:text | Should -Match "BitLocker Extension Attribute - Operations Overview v3"
+        $script:text | Should -Match "version: '3\.0'"
         $script:text | Should -Match "__EXTENSION_ATTRIBUTE_NAME__"
         $script:text | Should -Match "deployWorkbook && monitorExtensionAttributeRunbook"
+    }
+    It 'Considera riusciti solo i cicli extension senza errori e non interrotti' {
+        $script:text | Should -Match 'ResultDescription contains "\[EXTENSION_ATTRIBUTE_HEALTH\]"'
+        $script:text | Should -Match 'toint\(Payload\.errors\) == 0'
+        $script:text | Should -Match 'coalesce\(tobool\(Payload\.aborted\), false\) == false'
     }
     It 'Le email ricevitori usano il common alert schema' {
         $script:text | Should -Match 'useCommonAlertSchema: true'
     }
 
-    Describe 'Workbook extension attribute v2 JSON' {
+    Describe 'Workbook extension attribute v3 JSON' {
         BeforeAll { $script:extensionRaw = Get-Content $script:extensionWorkbook -Raw }
 
         It 'E un JSON valido' {

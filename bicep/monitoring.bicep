@@ -260,9 +260,11 @@ resource extensionAttributeDeadmanAlert 'Microsoft.Insights/scheduledQueryRules@
           query: format('''
 AzureDiagnostics
 | where ResourceProvider == "MICROSOFT.AUTOMATION"
-| where Category == "JobLogs"
+| where Category == "JobStreams"
 | where RunbookName_s == "{0}"
-| where ResultType == "Completed"
+| where ResultDescription contains "[EXTENSION_ATTRIBUTE_HEALTH]"
+| extend Payload = parse_json(extract(@"(\{.*\})", 1, ResultDescription))
+| where toint(Payload.errors) == 0 and coalesce(tobool(Payload.aborted), false) == false
 | summarize Completed = count()
 ''', extensionAttributeRunbookName)
           timeAggregation: 'Total'
@@ -301,23 +303,23 @@ resource workbook 'Microsoft.Insights/workbooks@2023-06-01' = if (deployWorkbook
 }
 
 resource extensionAttributeWorkbook 'Microsoft.Insights/workbooks@2023-06-01' = if (deployWorkbook && monitorExtensionAttributeRunbook) {
-  name: guid(logAnalyticsWorkspaceId, 'blkgm-extension-attribute-monitoring-v2')
+  name: guid(logAnalyticsWorkspaceId, 'blkgm-extension-attribute-monitoring-v3')
   location: location
   tags: union(tags, {
     workbook: 'extension-attribute'
-    workbookVersion: '2.0'
+    workbookVersion: '3.0'
   })
   kind: 'shared'
   properties: {
-    displayName: 'BitLocker Extension Attribute - Operations Overview v2'
+    displayName: 'BitLocker Extension Attribute - Operations Overview v3'
     serializedData: replace(
-      replace(loadTextContent('workbooks/extension-attribute-monitoring-v2.workbook.json'), '__EXTENSION_RUNBOOK_NAME__', extensionAttributeRunbookName),
+      replace(loadTextContent('workbooks/extension-attribute-monitoring-v3.workbook.json'), '__EXTENSION_RUNBOOK_NAME__', extensionAttributeRunbookName),
       '__EXTENSION_ATTRIBUTE_NAME__',
       extensionAttributeName
     )
     category: 'workbook'
     sourceId: logAnalyticsWorkspaceId
-    version: '2.0'
+    version: '3.0'
   }
 }
 

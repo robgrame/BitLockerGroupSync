@@ -303,23 +303,23 @@ resource workbook 'Microsoft.Insights/workbooks@2023-06-01' = if (deployWorkbook
 }
 
 resource extensionAttributeWorkbook 'Microsoft.Insights/workbooks@2023-06-01' = if (deployWorkbook && monitorExtensionAttributeRunbook) {
-  name: guid(logAnalyticsWorkspaceId, 'blkgm-extension-attribute-monitoring-v3')
+  name: guid(logAnalyticsWorkspaceId, 'blkgm-extension-attribute-monitoring-v4')
   location: location
   tags: union(tags, {
     workbook: 'extension-attribute'
-    workbookVersion: '3.0'
+    workbookVersion: '4.0'
   })
   kind: 'shared'
   properties: {
-    displayName: 'BitLocker Extension Attribute - Operations Overview v3'
+    displayName: 'BitLocker Extension Attribute - Operations Overview v4'
     serializedData: replace(
-      replace(loadTextContent('workbooks/extension-attribute-monitoring-v3.workbook.json'), '__EXTENSION_RUNBOOK_NAME__', extensionAttributeRunbookName),
+      replace(loadTextContent('workbooks/extension-attribute-monitoring-v4.workbook.json'), '__EXTENSION_RUNBOOK_NAME__', extensionAttributeRunbookName),
       '__EXTENSION_ATTRIBUTE_NAME__',
       extensionAttributeName
     )
     category: 'workbook'
     sourceId: logAnalyticsWorkspaceId
-    version: '3.0'
+    version: '4.0'
   }
 }
 

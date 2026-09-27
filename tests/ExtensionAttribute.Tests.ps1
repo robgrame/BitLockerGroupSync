@@ -459,6 +459,107 @@ Describe 'Invoke-DeviceUpdateBatch' {
         Should -Invoke Start-Sleep -Times 0
     }
 
+    It 'continua gli update del batch dopo un errore device e registra device e motivo' {
+        Mock Invoke-GraphApi {
+            return [pscustomobject]@{
+                responses = @(
+                    [pscustomobject]@{
+                        id = '1'
+                        status = 400
+                        body = @{
+                            error = @{
+                                code = 'Request_BadRequest'
+                                message = 'Extension attribute value rejected'
+                            }
+                        }
+                    }
+                    [pscustomobject]@{ id = '2'; status = 204 }
+                )
+            }
+        }
+
+        Invoke-DeviceUpdateBatch -Requests @(
+            [pscustomobject]@{
+                deviceName = 'Rejected device'
+                deviceId = 'device-rejected'
+                objectId = 'object-rejected'
+                currentValue = ''
+                desiredValue = 'enc'
+            }
+            [pscustomobject]@{
+                deviceName = 'Updated device'
+                deviceId = 'device-updated'
+                objectId = 'object-updated'
+                currentValue = ''
+                desiredValue = 'enc'
+            }
+        )
+
+        $script:UpdatedDevices | Should -Be 1
+        $script:UpdateErrors | Should -Be 1
+        $script:UpdateAbortReason | Should -BeNullOrEmpty
+        $script:UpdateErrorDetails[0].deviceName | Should -Be 'Rejected device'
+        $script:UpdateErrorDetails[0].deviceId | Should -Be 'device-rejected'
+        $script:UpdateErrorDetails[0].objectId | Should -Be 'object-rejected'
+        $script:UpdateErrorDetails[0].status | Should -Be 400
+        $script:UpdateErrorDetails[0].code | Should -Be 'Request_BadRequest'
+        $script:UpdateErrorDetails[0].message | Should -Be 'Extension attribute value rejected'
+        Should -Invoke Write-Log -Times 1 -ParameterFilter {
+            $Level -eq 'ERROR' -and
+            $Message -match '\[EXTENSION_ATTRIBUTE_ERROR\]' -and
+            $Message -match 'Rejected device' -and
+            $Message -match 'Extension attribute value rejected'
+        }
+    }
+
+    It 'continua con il batch successivo dopo un errore device nel primo chunk' {
+        $script:batchCalls = 0
+        Mock Invoke-GraphApi {
+            $script:batchCalls++
+            if ($script:batchCalls -eq 1) {
+                return [pscustomobject]@{
+                    responses = @(
+                        1..20 | ForEach-Object {
+                            if ($_ -eq 1) {
+                                [pscustomobject]@{
+                                    id = '1'
+                                    status = 400
+                                    body = @{ error = @{ code = 'Request_BadRequest'; message = 'Rejected first device' } }
+                                }
+                            }
+                            else {
+                                [pscustomobject]@{ id = [string]$_; status = 204 }
+                            }
+                        }
+                    )
+                }
+            }
+            [pscustomobject]@{
+                responses = @([pscustomobject]@{ id = '1'; status = 204 })
+            }
+        }
+
+        $requests = @(
+            1..21 | ForEach-Object {
+                [pscustomobject]@{
+                    deviceName = "Device-$_"
+                    deviceId = "device-$_"
+                    objectId = "object-$_"
+                    currentValue = ''
+                    desiredValue = 'enc'
+                }
+            }
+        )
+
+        Invoke-DeviceUpdateBatch -Requests $requests
+
+        $script:UpdatedDevices | Should -Be 20
+        $script:UpdateErrors | Should -Be 1
+        $script:UpdateAbortReason | Should -BeNullOrEmpty
+        $script:UpdateErrorDetails[0].deviceName | Should -Be 'Device-1'
+        Should -Invoke Invoke-GraphApi -Times 2
+    }
+
     It 'ritenta i risultati batch transitori e aggiorna il device al tentativo successivo' {
         $script:batchAttempt = 0
         Mock Invoke-GraphApi {
@@ -534,6 +635,124 @@ Describe 'Invoke-DeviceUpdateBatch' {
         $script:UpdateErrorDetails[0].code | Should -Be 'Authorization_RequestDenied'
         $script:UpdateErrorDetails[0].message | Should -Match 'Insufficient privileges'
         $script:UpdateErrorDetails[0].guidance | Should -Match 'Device.ReadWrite.All'
+    }
+
+    It 'interrompe i batch successivi quando un batch interamente non autorizzato segue un batch riuscito' {
+        $script:batchCalls = 0
+        Mock Invoke-GraphApi {
+            $script:batchCalls++
+            if ($script:batchCalls -eq 1) {
+                return [pscustomobject]@{
+                    responses = @(
+                        1..20 | ForEach-Object {
+                            [pscustomobject]@{ id = [string]$_; status = 204 }
+                        }
+                    )
+                }
+            }
+            return [pscustomobject]@{
+                responses = @(
+                    1..20 | ForEach-Object {
+                        [pscustomobject]@{
+                            id = [string]$_
+                            status = 403
+                            body = @{
+                                error = @{
+                                    code = 'Authorization_RequestDenied'
+                                    message = 'Insufficient privileges to complete the operation.'
+                                }
+                            }
+                        }
+                    }
+                )
+            }
+        }
+
+        $requests = @(
+            1..60 | ForEach-Object {
+                [pscustomobject]@{
+                    deviceName = "Device-$_"
+                    deviceId = "device-$_"
+                    objectId = "object-$_"
+                    currentValue = ''
+                    desiredValue = 'enc'
+                }
+            }
+        )
+
+        Invoke-DeviceUpdateBatch -Requests $requests
+
+        $script:UpdatedDevices | Should -Be 20
+        $script:UpdateErrors | Should -Be 20
+        $script:UpdateAbortReason | Should -Match 'Device.ReadWrite.All'
+        Should -Invoke Invoke-GraphApi -Times 2
+    }
+
+    It 'interrompe i batch successivi quando un retry singolo restituisce 401' {
+        $script:batchCalls = 0
+        Mock Invoke-GraphApi {
+            $script:batchCalls++
+            switch ($script:batchCalls) {
+                1 {
+                    return [pscustomobject]@{
+                        responses = @(
+                            1..20 | ForEach-Object {
+                                if ($_ -eq 20) {
+                                    [pscustomobject]@{
+                                        id = '20'
+                                        status = 429
+                                        body = @{ error = @{ code = 'TooManyRequests'; message = 'Retry' } }
+                                    }
+                                }
+                                else {
+                                    [pscustomobject]@{ id = [string]$_; status = 204 }
+                                }
+                            }
+                        )
+                    }
+                }
+                2 {
+                    return [pscustomobject]@{
+                        responses = @(
+                            [pscustomobject]@{
+                                id = '20'
+                                status = 401
+                                body = @{ error = @{ code = 'InvalidAuthenticationToken'; message = 'Token expired' } }
+                            }
+                        )
+                    }
+                }
+                default {
+                    return [pscustomobject]@{
+                        responses = @(
+                            1..20 | ForEach-Object {
+                                [pscustomobject]@{ id = [string]$_; status = 204 }
+                            }
+                        )
+                    }
+                }
+            }
+        }
+
+        $requests = @(
+            1..40 | ForEach-Object {
+                [pscustomobject]@{
+                    deviceName = "Device-$_"
+                    deviceId = "device-$_"
+                    objectId = "object-$_"
+                    currentValue = ''
+                    desiredValue = 'enc'
+                }
+            }
+        )
+
+        Invoke-DeviceUpdateBatch -Requests $requests
+
+        $script:UpdatedDevices | Should -Be 19
+        $script:UpdateErrors | Should -Be 1
+        $script:UpdateAbortReason | Should -Match 'autenticazione'
+        $script:UpdateAbortReason | Should -Match 'HTTP 401'
+        Should -Invoke Invoke-GraphApi -Times 2
     }
 
     It 'non interpreta un singolo 403 dopo un successo come errore globale di autorizzazione' {
@@ -638,7 +857,7 @@ Describe 'Invoke-DeviceUpdateBatch' {
 
         $script:UpdatedDevices | Should -Be 0
         $script:UpdateErrors | Should -Be 1
-        $script:UpdateAbortReason | Should -Not -BeNullOrEmpty
+        $script:UpdateAbortReason | Should -BeNullOrEmpty
         if ($ExpectedCode) {
             $script:UpdateErrorDetails[0].code | Should -Be $ExpectedCode
         }

@@ -4,7 +4,7 @@
 
 ### Dynamic Entra ID security groups driven by Intune BitLocker encryption state & recovery-key escrow
 
-**Versione soluzione: 1.6.7**
+**Versione soluzione: 1.7.0**
 
 [![PowerShell](https://img.shields.io/badge/PowerShell-7.2-5391FE?style=for-the-badge&logo=powershell&logoColor=white)](https://learn.microsoft.com/powershell/)
 [![Bicep](https://img.shields.io/badge/Bicep-IaC-00BCF2?style=for-the-badge&logo=microsoftazure&logoColor=white)](https://learn.microsoft.com/azure/azure-resource-manager/bicep/)
@@ -403,10 +403,11 @@ flowchart LR
   e, se abilitata la Logic App Teams (o valorizzato `alertActionWebhookUrl`), a un **webhook**.
 - **Workbook** *Nimbus.BitLockerGroupSync - Monitoring*: dashboard con trend degli esiti job,
   ultimi job, errori recenti, righe di riepilogo e dettaglio dei device aggiunti ai gruppi.
-- **Workbook** *BitLocker Extension Attribute - Operations Overview v3*: dashboard
+- **Workbook** *BitLocker Extension Attribute - Operations Overview v4*: dashboard
   graph-first dedicata al secondo runbook, con KPI dell'ultimo ciclo, trend di valutati /
   conformi / aggiornati, affidabilità dei job, distribuzione `enc` / `notenc`, anomalie,
-  device aggiornati più frequentemente, cicli interrotti, device saltati e drill-down diagnostico.
+  device aggiornati più frequentemente, cicli interrotti, device saltati e drill-down
+  diagnostico con device, status HTTP, codice Graph e motivo di ogni update fallito.
 - Il runbook extension attribute registra nel vero stream **Error** ogni update Graph
   definitivamente fallito, include nel riepilogo gli status HTTP e alcuni esempi diagnostici,
   e ritenta con backoff gli errori transitori senza mascherare errori di autorizzazione.

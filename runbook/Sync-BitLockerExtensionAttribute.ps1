@@ -13,7 +13,7 @@
     vengono ignorati e contabilizzati nel riepilogo.
 
 .NOTES
-    Version: 1.6.6
+    Version: 1.7.0
 
     Permessi Graph application richiesti:
       - DeviceManagementManagedDevices.Read.All
@@ -694,9 +694,7 @@ function Invoke-DeviceUpdateBatch {
                                 }
                             }
                         })
-                    $script:UpdateAbortReason = 'Risposta Graph batch con status HTTP mancante o non valido. Il ciclo viene interrotto e verra riconciliato dalla prossima esecuzione.'
-                    Write-Log $script:UpdateAbortReason 'ERROR'
-                    return
+                    continue
                 }
 
                 if ($status -ge 300 -and $status -le 399) {
@@ -711,9 +709,7 @@ function Invoke-DeviceUpdateBatch {
                                 }
                             }
                         })
-                    $script:UpdateAbortReason = "Risposta Graph batch con status redirect HTTP $status. Il ciclo viene interrotto e verra riconciliato dalla prossima esecuzione."
-                    Write-Log $script:UpdateAbortReason 'ERROR'
-                    return
+                    continue
                 }
 
                 if ($status -ge 200 -and $status -le 299) {
@@ -746,18 +742,30 @@ function Invoke-DeviceUpdateBatch {
                 }
             }
 
-            if ($script:UpdatedDevices -eq 0 -and
-                $pending.Count -gt 1 -and
-                $authorizationFailures.Count -eq $pending.Count) {
+            $authenticationFailures = @(
+                $authorizationFailures | Where-Object { [int]$_.status -eq 401 }
+            )
+            $isBatchWideAuthorizationFailure = $pending.Count -gt 1 -and
+                $authorizationFailures.Count -eq $pending.Count
+            if ($authenticationFailures.Count -gt 0 -or $isBatchWideAuthorizationFailure) {
                 $statuses = @($authorizationFailures | ForEach-Object { [int]$_.status } | Sort-Object -Unique)
                 $statusSummary = ($statuses | ForEach-Object { "HTTP $_" }) -join '/'
-                $guidance = if ($statuses -contains 403) {
+                $guidance = if ($statuses -contains 401) {
+                    "Verificare configurazione, validita e tenant dell'identita usata dal job."
+                }
+                elseif ($statuses -contains 403) {
                     "Verificare che l'identita usata dal job disponga dell'application permission Microsoft Graph Device.ReadWrite.All con admin consent."
                 }
                 else {
                     "Verificare configurazione e validita dell'identita usata dal job."
                 }
-                $script:UpdateAbortReason = "Microsoft Graph ha rifiutato tutti i $($pending.Count) update del batch corrente con $statusSummary. $guidance"
+                $failureScope = if ($authenticationFailures.Count -gt 0) {
+                    'Microsoft Graph ha restituito un errore di autenticazione'
+                }
+                else {
+                    "Microsoft Graph ha rifiutato tutti i $($pending.Count) update del batch corrente"
+                }
+                $script:UpdateAbortReason = "$failureScope con $statusSummary. $guidance"
                 Write-Log $script:UpdateAbortReason 'ERROR'
                 return
             }

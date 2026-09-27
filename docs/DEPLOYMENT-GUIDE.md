@@ -545,10 +545,12 @@ Il job deve terminare `Completed` e i gruppi Entra devono contenere i device att
 Dopo il tempo di ingestion di Log Analytics, verificare:
 
 - esito job nel tempo;
-- il nuovo workbook **BitLocker Extension Attribute - Operations Overview v3**, creato
-  come risorsa separata senza sovrascrivere il workbook storico;
+- il nuovo workbook **BitLocker Extension Attribute - Operations Overview v4**, creato
+  come risorsa separata senza sovrascrivere i workbook storici v2 e v3; usare la v4
+  per il drill-down degli errori per device;
 - KPI dell'ultimo ciclo e trend di device valutati, conformi e aggiornati;
 - distribuzione degli aggiornamenti `enc` / `notenc`;
+- dettaglio degli update falliti con device, object ID, status HTTP, codice Graph e motivo;
 - grafici di affidabilità, conflitti, errori, device non risolti e stato cifratura ignoto;
 - ultimi job;
 - errori recenti;
